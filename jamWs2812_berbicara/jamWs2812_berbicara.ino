@@ -1,35 +1,47 @@
 #include <Adafruit_NeoPixel.h>
-#include <NTPClient.h>
+
 #include <ESP8266WiFi.h>
+#include <NTPClient.h>
 #include <WiFiUdp.h>
-#include <WiFiManager.h>
-#include <DS3231.h>
-#include <SPI.h>
-#include <EEPROM.h>
-#include <Wire.h>
-#include <ArduinoOTA.h>
 #include <ESP8266mDNS.h>
 
-#define PinLed D5
+//#include <WiFiManager.h>
+
+#include <DS3231.h>
+#include <SPI.h>
+#include <Wire.h>
+
+#include <EEPROM.h>
+
+#include <ESP8266WebServer.h>
+
+#include <ArduinoOTA.h>
+#include "DFRobotDFPlayerMini.h"
+
+#define PINLED D5
 #define LEDS_PER_SEG 5
 #define LEDS_PER_DOT 4
 #define LEDS_PER_DIGIT  LEDS_PER_SEG *7
 #define LED   148
 
-#ifndef STASSID
-#define STASSID "Wifi"
-#define STAPSK  "00000000"
-#endif
+char ssid[20]     = "JAM_PANEL";
+char password[20] = "00000000";
 
-const char* ssid = STASSID;
-const char* password = STAPSK;
-const char* host = "OTA-LEDS";
+const char* otaSsid = "KELUARGA02";
+const char* otaPass = "suhartono";
+const char* otaHost = "SERVER";
+
+const long utcOffsetInSeconds = 25200;
 
 RTClib RTC;
 DS3231 Time;
 DateTime now;
-WiFiManager wifi;
-Adafruit_NeoPixel strip(LED, PinLed, NEO_GRB + NEO_KHZ800);
+//WiFiManager wifi;
+Adafruit_NeoPixel strip(LED, PINLED, NEO_GRB + NEO_KHZ800);
+DFRobotDFPlayerMini myDFPlayer;
+WiFiUDP ntpUDP;
+NTPClient Clock(ntpUDP, "asia.pool.ntp.org", utcOffsetInSeconds);
+ESP8266WebServer server(80);
 
 uint8_t h1;
 uint8_t h2;
@@ -47,6 +59,25 @@ uint8_t hue;
 uint8_t pixelColor;
 uint8_t dotsOn = 0;
 
+// MODE
+bool modeWarnaOtomatis = true;
+bool modeOnline = true;
+
+// MANUAL COLOR
+uint8_t manualR = 255, manualG = 0, manualB = 0;
+
+// ALARM
+uint8_t alarm1Hour = 6, alarm1Minute = 0, alarm1Sound = 1;
+uint8_t alarm2Hour = 12, alarm2Minute = 0, alarm2Sound = 2;
+
+// DFPlayer
+bool isPlaying = false;
+
+uint8_t lastHourlyPlay = 255;  // Nilai tidak valid awalnya
+
+IPAddress local_IP(192, 168, 2, 1);
+IPAddress gateway(192, 168, 2, 1);
+IPAddress subnet(255, 255, 255, 0);
 
 long numberss[] = {
   //  7654321
@@ -79,18 +110,157 @@ long numberss[] = {
   0b1011011,  // [26] S
 };
 
+void handleRoot() {
+  server.send(200, "text/plain", "Jam LED Siap!");
+}
+
+void handleCommand() {
+  String cmd = server.arg("q");  // contoh: 192.168.4.1/cmd?q=PLAY
+
+  if (cmd == "PLAY") {
+    myDFPlayer.play(1);
+    isPlaying = true;
+  } else if (cmd == "STOP") {
+    stopDFPlayer();
+  } else if (cmd.startsWith("SET_TIME:")) {
+    int h = cmd.substring(9, 11).toInt();
+    int m = cmd.substring(12, 14).toInt();
+    int s = cmd.substring(15, 17).toInt();
+    Time.setHour(h);
+    Time.setMinute(m);
+    Time.setSecond(s);
+   // RTC.adjust(DateTime(2025, 1, 1, h, m, 0));
+  } else if (cmd.startsWith("COLOR:")) {
+    modeWarnaOtomatis = false;
+    manualR = cmd.substring(6, 9).toInt();
+    manualG = cmd.substring(10, 13).toInt();
+    manualB = cmd.substring(14, 17).toInt();
+  } else if (cmd == "AUTO_COLOR") {
+    modeWarnaOtomatis = true;
+  } else if (cmd == "MODE_ONLINE") {
+    modeOnline = true;
+  } else if (cmd == "MODE_OFFLINE") {
+    modeOnline = false;
+  } else if (cmd.startsWith("ALARM1:")) {
+    alarm1Hour = cmd.substring(7, 9).toInt();
+    alarm1Minute = cmd.substring(10, 12).toInt();
+    alarm1Sound = cmd.substring(13).toInt();
+  } else if (cmd.startsWith("ALARM2:")) {
+    alarm2Hour = cmd.substring(7, 9).toInt();
+    alarm2Minute = cmd.substring(10, 12).toInt();
+    alarm2Sound = cmd.substring(13).toInt();
+  }
+
+  server.send(200, "text/plain", "OK");
+}
+
+
+void AP_init() {
+  WiFi.mode(WIFI_AP);
+  WiFi.softAPConfig(local_IP, gateway, subnet);
+  WiFi.softAP(ssid, password);
+  WiFi.setSleepMode(WIFI_NONE_SLEEP);
+
+  server.on("/setPanel", handleCommand);
+  server.begin();
+//  webSocket.begin();
+//  webSocket.onEvent(webSocketEvent);
+}
+
+void ONLINE() {
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(otaSsid, otaPass);
+
+  while (WiFi.waitForConnectResult() != WL_CONNECTED) {
+    //Serial.println("OTA WiFi gagal. Rebooting...");
+    delay(5000);
+    ESP.restart();
+  }
+
+  ArduinoOTA.setHostname(otaHost);
+ 
+  ArduinoOTA.onEnd([]() {
+    //Serial.println("restart=1");
+    delay(1000);
+    ESP.restart();
+  });
+  
+  ArduinoOTA.begin();
+  //Serial.println("OTA Ready");
+}
 
 void setup() {
   Serial.begin(115200);
   strip.begin();
   strip.setBrightness(50);
-
+  myDFPlayer.begin(Serial);  // DFPlayer RX → TX ESP8266
+  myDFPlayer.volume(25);     // Volume dari 0 - 30
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
+  
+  if (modeOnline) {
+     ArduinoOTA.handle();
+     getClockNTP();
+  } else {
+    getClockRTC(); // dari RTC
+    server.handleClient();
 
+  }
+
+  timerHue();
+  uint32_t colorNow = getCurrentColor();
+
+  showClock(colorNow);
+  showDots(colorNow);
+  checkAlarm();
+  checkHourlyChime();   // bunyi tiap jam
 }
+
+void showClock(uint32_t color) {
+  DisplayNumber(h1, 3, color);
+  DisplayNumber(h2, 2, color);
+  DisplayNumber(m1, 1, color);
+  DisplayNumber(m2, 0, color);
+}
+
+void checkHourlyChime() {
+  if (now.minute() == 0 && now.second() == 0 && now.hour() != lastHourlyPlay) {
+    uint8_t jam = now.hour() % 12;
+    if (jam == 0) jam = 12;  // Ubah 0 jadi 12
+
+    myDFPlayer.play(jam);   // Misalnya track 1-12 adalah suara jam
+    isPlaying = true;
+    lastHourlyPlay = now.hour();  // Simpan jam terakhir dimainkan
+  }
+}
+
+void checkAlarm() {
+  if (!isPlaying) {
+    if (now.hour() == alarm1Hour && now.minute() == alarm1Minute && now.second() == 0) {
+      myDFPlayer.play(alarm1Sound);
+      isPlaying = true;
+    }
+    if (now.hour() == alarm2Hour && now.minute() == alarm2Minute && now.second() == 0) {
+      myDFPlayer.play(alarm2Sound);
+      isPlaying = true;
+    }
+  }
+}
+
+void stopDFPlayer() {
+  myDFPlayer.stop();
+  isPlaying = false;
+}
+
+uint32_t getCurrentColor() {
+  if (modeWarnaOtomatis) {
+    return Wheel((hue + pixelColor) & 255);
+  } else {
+    return strip.Color(manualR, manualG, manualB);
+  }
+}
+
 
 void DisplayNumber(byte number, byte segment, uint32_t color) {
   // Hitung index awal untuk digit ke-0 s.d. ke-3
@@ -123,13 +293,14 @@ void getClockRTC()
   m2 = now.minute() % 10;
 }
 
-void showClock(uint32_t color) {
-  DisplayNumber(h1, 3, color);
-  DisplayNumber(h2, 2, color);
-  DisplayNumber(m1, 1, color);
-  DisplayNumber(m2, 0, color);
+void getClockNTP()
+{
+  Clock.update();
+  h1 = Clock.getHours() / 10;
+  h2 = Clock.getHours() % 10;
+  m1 = Clock.getMinutes() / 10;
+  m2 = Clock.getMinutes() % 10;
 }
-
 void showDots(uint32_t color) {
   now = RTC.now();
   bool isOn = now.second() % 2;
