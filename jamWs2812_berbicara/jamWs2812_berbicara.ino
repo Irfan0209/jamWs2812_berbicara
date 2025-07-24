@@ -79,6 +79,17 @@ IPAddress local_IP(192, 168, 2, 1);
 IPAddress gateway(192, 168, 2, 1);
 IPAddress subnet(255, 255, 255, 0);
 
+struct PanelSettings {
+  bool modeWarnaOtomatis;
+  bool modeOnline;
+  uint8_t manualR, manualG, manualB;
+  uint8_t alarm1Hour, alarm1Minute, alarm1Sound;
+  uint8_t alarm2Hour, alarm2Minute, alarm2Sound;
+};
+
+PanelSettings settings;
+
+
 long numberss[] = {
   //  7654321
   0b0111111,  // [0] 0
@@ -115,13 +126,15 @@ void handleRoot() {
 }
 
 void handleCommand() {
-  String cmd = server.arg("q");  // contoh: 192.168.4.1/cmd?q=PLAY
+  String cmd = server.arg("q");
 
   if (cmd == "PLAY") {
     myDFPlayer.play(1);
     isPlaying = true;
+
   } else if (cmd == "STOP") {
     stopDFPlayer();
+
   } else if (cmd.startsWith("SET_TIME:")) {
     int h = cmd.substring(9, 11).toInt();
     int m = cmd.substring(12, 14).toInt();
@@ -129,26 +142,56 @@ void handleCommand() {
     Time.setHour(h);
     Time.setMinute(m);
     Time.setSecond(s);
-   // RTC.adjust(DateTime(2025, 1, 1, h, m, 0));
+
   } else if (cmd.startsWith("COLOR:")) {
     modeWarnaOtomatis = false;
     manualR = cmd.substring(6, 9).toInt();
     manualG = cmd.substring(10, 13).toInt();
     manualB = cmd.substring(14, 17).toInt();
+
+    settings.modeWarnaOtomatis = modeWarnaOtomatis;
+    settings.manualR = manualR;
+    settings.manualG = manualG;
+    settings.manualB = manualB;
+    saveSettings();
+
   } else if (cmd == "AUTO_COLOR") {
     modeWarnaOtomatis = true;
+
+    settings.modeWarnaOtomatis = modeWarnaOtomatis;
+    saveSettings();
+
   } else if (cmd == "MODE_ONLINE") {
     modeOnline = true;
+
+    settings.modeOnline = modeOnline;
+    saveSettings();
+
   } else if (cmd == "MODE_OFFLINE") {
     modeOnline = false;
+
+    settings.modeOnline = modeOnline;
+    saveSettings();
+
   } else if (cmd.startsWith("ALARM1:")) {
     alarm1Hour = cmd.substring(7, 9).toInt();
     alarm1Minute = cmd.substring(10, 12).toInt();
     alarm1Sound = cmd.substring(13).toInt();
+
+    settings.alarm1Hour = alarm1Hour;
+    settings.alarm1Minute = alarm1Minute;
+    settings.alarm1Sound = alarm1Sound;
+    saveSettings();
+
   } else if (cmd.startsWith("ALARM2:")) {
     alarm2Hour = cmd.substring(7, 9).toInt();
     alarm2Minute = cmd.substring(10, 12).toInt();
     alarm2Sound = cmd.substring(13).toInt();
+
+    settings.alarm2Hour = alarm2Hour;
+    settings.alarm2Minute = alarm2Minute;
+    settings.alarm2Sound = alarm2Sound;
+    saveSettings();
   }
 
   server.send(200, "text/plain", "OK");
@@ -189,8 +232,33 @@ void ONLINE() {
   //Serial.println("OTA Ready");
 }
 
+void saveSettings() {
+  EEPROM.put(0, settings);
+  EEPROM.commit();
+}
+
+void loadSettings() {
+  EEPROM.get(0, settings);
+
+  // Gunakan nilai hasil load
+  modeWarnaOtomatis = settings.modeWarnaOtomatis;
+  modeOnline = settings.modeOnline;
+  manualR = settings.manualR;
+  manualG = settings.manualG;
+  manualB = settings.manualB;
+  alarm1Hour = settings.alarm1Hour;
+  alarm1Minute = settings.alarm1Minute;
+  alarm1Sound = settings.alarm1Sound;
+  alarm2Hour = settings.alarm2Hour;
+  alarm2Minute = settings.alarm2Minute;
+  alarm2Sound = settings.alarm2Sound;
+}
+
+
 void setup() {
   Serial.begin(115200);
+  EEPROM.begin(512);  // Inisialisasi EEPROM
+  loadSettings();     // Load data ke variabel
   strip.begin();
   strip.setBrightness(50);
   myDFPlayer.begin(Serial);  // DFPlayer RX → TX ESP8266
