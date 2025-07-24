@@ -70,6 +70,9 @@ uint8_t manualR = 255, manualG = 0, manualB = 0;
 uint8_t alarm1Hour = 6, alarm1Minute = 0, alarm1Sound = 1;
 uint8_t alarm2Hour = 12, alarm2Minute = 0, alarm2Sound = 2;
 
+uint8_t brightness;
+uint8_t volumeDfPlayer;
+
 // DFPlayer
 bool isPlaying = false;
 
@@ -85,6 +88,8 @@ struct PanelSettings {
   uint8_t manualR, manualG, manualB;
   uint8_t alarm1Hour, alarm1Minute, alarm1Sound;
   uint8_t alarm2Hour, alarm2Minute, alarm2Sound;
+  uint8_t kecerahan;
+  uint8_t volumeDfplayer;
 };
 
 PanelSettings settings;
@@ -128,12 +133,27 @@ void handleRoot() {
 void handleCommand() {
   String cmd = server.arg("q");
 
-  if (cmd == "PLAY") {
-    myDFPlayer.play(1);
+  if (cmd == "PLAY:") {
+    uint8_t track = cmd.substring(5, 7).toInt();
+    myDFPlayer.play(track);
     isPlaying = true;
 
   } else if (cmd == "STOP") {
     stopDFPlayer();
+
+  } else if (cmd == "BRIGHTNESS:") {
+    brightness = cmd.substring(11, 14).toInt();
+    uint8_t data = map(brightness,0,100,1,255);
+    strip.setBrightness(data);
+    settings.kecerahan = data;
+    saveSettings();
+
+  } else if (cmd == "VOLUME:") {
+    volumeDfPlayer = cmd.substring(7, 9).toInt();
+    uint8_t data = map(volumeDfPlayer,0,100,0,29);
+    myDFPlayer.volume(data);
+    settings.volumeDfplayer = data;
+    saveSettings();
 
   } else if (cmd.startsWith("SET_TIME:")) {
     int h = cmd.substring(9, 11).toInt();
@@ -252,17 +272,22 @@ void loadSettings() {
   alarm2Hour = settings.alarm2Hour;
   alarm2Minute = settings.alarm2Minute;
   alarm2Sound = settings.alarm2Sound;
+  brightness = settings.kecerahan;
+  volumeDfPlayer = settings.volumeDfplayer;
 }
 
 
 void setup() {
   Serial.begin(115200);
-  EEPROM.begin(512);  // Inisialisasi EEPROM
-  loadSettings();     // Load data ke variabel
-  strip.begin();
-  strip.setBrightness(50);
   myDFPlayer.begin(Serial);  // DFPlayer RX → TX ESP8266
-  myDFPlayer.volume(25);     // Volume dari 0 - 30
+  EEPROM.begin(512);  // Inisialisasi EEPROM
+  strip.begin();
+  
+  loadSettings();     // Load data ke variabel
+  
+  strip.setBrightness(brightness);
+  myDFPlayer.volume(volumeDfPlayer);     // Volume dari 0 - 30
+  modeOnline?ONLINE():AP_init();
 }
 
 void loop() {
