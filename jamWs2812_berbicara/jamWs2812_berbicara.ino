@@ -24,7 +24,7 @@
 #define LEDS_PER_DIGIT  LEDS_PER_SEG *7
 #define LED   148
 
-char ssid[20]     = "JAM_PANEL";
+char ssid[20]     = "JAM_WS2812";
 char password[20] = "00000000";
 
 const char* otaSsid = "KELUARGA02";
@@ -61,7 +61,7 @@ uint8_t dotsOn = 0;
 
 // MODE
 bool modeWarnaOtomatis = true;
-bool modeOnline = true;
+bool modeOnline = false;
 
 // MANUAL COLOR
 uint8_t manualR = 255, manualG = 0, manualB = 0;
@@ -70,7 +70,7 @@ uint8_t manualR = 255, manualG = 0, manualB = 0;
 uint8_t alarm1Hour = 6, alarm1Minute = 0, alarm1Sound = 1;
 uint8_t alarm2Hour = 12, alarm2Minute = 0, alarm2Sound = 2;
 
-uint8_t brightness;
+uint8_t brightness = 20;
 uint8_t volumeDfPlayer;
 
 // DFPlayer
@@ -93,7 +93,6 @@ struct PanelSettings {
 };
 
 PanelSettings settings;
-
 
 long numberss[] = {
   //  7654321
@@ -125,6 +124,8 @@ long numberss[] = {
   0b1111100,  // [25] P
   0b1011011,  // [26] S
 };
+
+
 
 void handleRoot() {
   server.send(200, "text/plain", "Jam LED Siap!");
@@ -224,7 +225,7 @@ void AP_init() {
   WiFi.softAP(ssid, password);
   WiFi.setSleepMode(WIFI_NONE_SLEEP);
 
-  server.on("/setPanel", handleCommand);
+  server.on("/set", handleCommand);
   server.begin();
 //  webSocket.begin();
 //  webSocket.onEvent(webSocketEvent);
@@ -279,35 +280,40 @@ void loadSettings() {
 
 void setup() {
   Serial.begin(115200);
-  myDFPlayer.begin(Serial);  // DFPlayer RX → TX ESP8266
+  //myDFPlayer.begin(Serial);  // DFPlayer RX → TX ESP8266
   EEPROM.begin(512);  // Inisialisasi EEPROM
   strip.begin();
-  
-  loadSettings();     // Load data ke variabel
+  Wire.begin();
+  //loadSettings();     // Load data ke variabel
   
   strip.setBrightness(brightness);
-  myDFPlayer.volume(volumeDfPlayer);     // Volume dari 0 - 30
+  //myDFPlayer.volume(volumeDfPlayer);     // Volume dari 0 - 30
   modeOnline?ONLINE():AP_init();
+//  Time.setHour(h);
+//  Time.setMinute(m);
+//  Time.setSecond(s);
+  Serial.println("modeOnline: " + String(modeOnline));
+  Serial.println("READY");
 }
 
 void loop() {
-  
-  if (modeOnline) {
-     ArduinoOTA.handle();
-     getClockNTP();
-  } else {
+  server.handleClient();
+//  if (modeOnline) {
+//     ArduinoOTA.handle();
+//     getClockNTP();
+//  } else {
     getClockRTC(); // dari RTC
-    server.handleClient();
-
-  }
+    
+//
+//  }
 
   timerHue();
   uint32_t colorNow = getCurrentColor();
 
   showClock(colorNow);
-  showDots(colorNow);
-  checkAlarm();
-  checkHourlyChime();   // bunyi tiap jam
+  showDots(strip.Color(255, 0, 0));
+//  checkAlarm();
+//  checkHourlyChime();   // bunyi tiap jam
 }
 
 void showClock(uint32_t color) {
@@ -354,28 +360,48 @@ uint32_t getCurrentColor() {
   }
 }
 
-
 void DisplayNumber(byte number, byte segment, uint32_t color) {
-  // Hitung index awal untuk digit ke-0 s.d. ke-3
   byte startindex = segment * LEDS_PER_DIGIT;
   if (segment >= 2) startindex += LEDS_PER_DOT * 2;  // Lewati dot setelah digit 1
 
-  uint8_t segBits = numberss[number];  // Bit pola untuk angka
+  uint8_t segBits = numberss[number];
 
-  // Untuk setiap dari 7 segmen (a-g)
-  for (byte i = 0; i < 7; i++) {
-    bool isOn = segBits & (1 << i);  // Cek apakah segmen i aktif
-    uint32_t col = isOn ? color : strip.Color(0, 0, 0);
-
-    // Setiap LED dalam segmen
-    for (byte j = 0; j < LEDS_PER_SEG; j++) {
-      byte ledIndex = startindex + i * LEDS_PER_SEG + j;
-      strip.setPixelColor(ledIndex, col);
+  for (byte i = 0; i < 7; i++) {           // 7 segments
+    for (byte j = 0; j < LEDS_PER_SEG; j++) {         // LEDs per segment
+      strip.setPixelColor(i * LEDS_PER_SEG + j + startindex , (numberss[number] & 1 << i) == 1 << i ? color : strip.Color(0, 0, 0));
     }
   }
-
-  strip.show();  // Tampilkan setelah semua pixel diatur
+  strip.show();
 }
+
+
+/*
+void DisplayNumber(byte number, byte segment, uint32_t color) {
+  // segment from left to right: 3, 2, 1, 0
+  byte startindex = 0;
+  switch (segment) {
+    case 0:
+      startindex = 0;
+      break;
+    case 1:
+      startindex = LEDS_PER_DIGIT;
+      break;
+    case 2:
+      startindex = LEDS_PER_DIGIT * 2 + LEDS_PER_DOT * 2;
+      break;
+    case 3:
+      startindex = LEDS_PER_DIGIT * 3 + LEDS_PER_DOT * 2;
+      break;
+  }
+
+  for (byte i = 0; i < 7; i++) {           // 7 segments
+    for (byte j = 0; j < LEDS_PER_SEG; j++) {         // LEDs per segment
+      strip.setPixelColor(i * LEDS_PER_SEG + j + startindex , (numberss[number] & 1 << i) == 1 << i ? color : strip.Color(0, 0, 0));
+      strip.show();
+    }
+  }
+}
+*/
 
 void getClockRTC() 
 {
