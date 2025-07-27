@@ -15,7 +15,7 @@
 
 #include <ESP8266WebServer.h>
 
-#include <ArduinoOTA.h>
+#include <WebOTA.h>
 #include "DFRobotDFPlayerMini.h"
 
 #define PINLED D5
@@ -136,43 +136,49 @@ void handleRoot() {
 }
 
 void handleCommand() {
-  String cmd = server.arg("q");
+ String DATA = "";
 
-  if (cmd == "PLAY:") {
-    uint8_t track = cmd.substring(5, 7).toInt();
-    myDFPlayer.play(track);
+  if (server.hasArg("PLAY")) {
+    DATA = server.arg("PLAY");
+    uint8_t track = DATA.substring(5, 7).toInt();
+    myDFPlayer.playFolder(2,track);
     isPlaying = true;
 
-  } else if (cmd == "STOP") {
+  } else if (server.hasArg("STOP")) {
     stopDFPlayer();
 
-  } else if (cmd == "BRIGHTNESS:") {
-    brightness = cmd.substring(11, 14).toInt();
+  } else if (server.hasArg("BRIGHTNESS")) {
+    DATA = server.arg("BRIGHTNESS");
+    brightness = DATA.substring(11, 14).toInt();
     uint8_t data = map(brightness,0,100,1,255);
     strip.setBrightness(data);
+    Serial.println("brightness: " + String(data));
     settings.kecerahan = data;
     saveSettings();
 
-  } else if (cmd == "VOLUME:") {
-    volumeDfPlayer = cmd.substring(7, 9).toInt();
+  } else if (server.hasArg("VOLUME")) {
+    DATA = server.arg("VOLUME");
+    volumeDfPlayer = DATA.substring(7, 9).toInt();
     uint8_t data = map(volumeDfPlayer,0,100,0,29);
     myDFPlayer.volume(data);
     settings.volumeDfplayer = data;
     saveSettings();
 
-  } else if (cmd.startsWith("SET_TIME:")) {
-    int h = cmd.substring(9, 11).toInt();
-    int m = cmd.substring(12, 14).toInt();
-    int s = cmd.substring(15, 17).toInt();
+  } else if (server.hasArg("SET_TIME")) {
+    DATA = server.arg("SET_TIME");
+    int h = DATA.substring(9, 11).toInt();
+    int m = DATA.substring(12, 14).toInt();
+    int s = DATA.substring(15, 17).toInt();
     Time.setHour(h);
     Time.setMinute(m);
     Time.setSecond(s);
 
-  } else if (cmd.startsWith("COLOR:")) {
+  } else if (server.hasArg("COLOR")) {
+    DATA = server.arg("COLOR");
     modeWarnaOtomatis = false;
-    manualR = cmd.substring(6, 9).toInt();
-    manualG = cmd.substring(10, 13).toInt();
-    manualB = cmd.substring(14, 17).toInt();
+    manualR = DATA.substring(6, 9).toInt();
+    manualG = DATA.substring(10, 13).toInt();
+    manualB = DATA.substring(14, 17).toInt();
 
     settings.modeWarnaOtomatis = modeWarnaOtomatis;
     settings.manualR = manualR;
@@ -180,48 +186,51 @@ void handleCommand() {
     settings.manualB = manualB;
     saveSettings();
 
-  } else if (cmd == "AUTO_COLOR") {
+  } else if (server.hasArg("AUTO_COLOR")) {
     modeWarnaOtomatis = true;
 
     settings.modeWarnaOtomatis = modeWarnaOtomatis;
     saveSettings();
 
-  } else if (cmd == "MODE_ONLINE") {
+  }/* else if (cmd == "MODE_ONLINE") {
     modeOnline = true;
-
+    strip.clear();
     settings.modeOnline = modeOnline;
     saveSettings();
-    delay(1000);
-    ESP.restart();
+//    delay(1000);
+//    ESP.restart();
 
   } else if (cmd == "MODE_OFFLINE") {
     modeOnline = false;
 
     settings.modeOnline = modeOnline;
     saveSettings();
-    delay(1000);
-    ESP.restart();
+//    delay(1000);
+//    ESP.restart();
 
-  } else if (cmd == "MODE_SWITCH:") {
-    modeSwitchTemp = cmd.substring(12).toInt();
+  }*/ else if (server.hasArg("MODE_SWITCH")) {
+    DATA = server.arg("MODE_SWITCH");
+    modeSwitchTemp = DATA.substring(12).toInt();
 
     settings.modeSwitchTempp = modeSwitchTemp;
     saveSettings();
 
-  }else if (cmd.startsWith("ALARM1:")) {
-    alarm1Hour = cmd.substring(7, 9).toInt();
-    alarm1Minute = cmd.substring(10, 12).toInt();
-    alarm1Sound = cmd.substring(13).toInt();
+  }else if (server.hasArg("ALARM1:")) {
+    DATA = server.arg("ALARM1");
+    alarm1Hour = DATA.substring(7, 9).toInt();
+    alarm1Minute = DATA.substring(10, 12).toInt();
+    alarm1Sound = DATA.substring(13).toInt();
 
     settings.alarm1Hour = alarm1Hour;
     settings.alarm1Minute = alarm1Minute;
     settings.alarm1Sound = alarm1Sound;
     saveSettings();
 
-  } else if (cmd.startsWith("ALARM2:")) {
-    alarm2Hour = cmd.substring(7, 9).toInt();
-    alarm2Minute = cmd.substring(10, 12).toInt();
-    alarm2Sound = cmd.substring(13).toInt();
+  } else if (server.hasArg("ALARM2:")) {
+    DATA = server.arg("ALARM2");
+    alarm2Hour = DATA.substring(7, 9).toInt();
+    alarm2Minute = DATA.substring(10, 12).toInt();
+    alarm2Sound = DATA.substring(13).toInt();
 
     settings.alarm2Hour = alarm2Hour;
     settings.alarm2Minute = alarm2Minute;
@@ -241,9 +250,10 @@ void AP_init() {
 
   server.on("/set", handleCommand);
   server.begin();
+  webota.init(8888, "/update");
 }
 
-void ONLINE() {
+/*void ONLINE() {
   WiFi.mode(WIFI_STA);
   WiFi.begin(otaSsid, otaPass);
 
@@ -263,7 +273,7 @@ void ONLINE() {
   
   ArduinoOTA.begin();
   //Serial.println("OTA Ready");
-}
+}*/
 
 void saveSettings() {
   EEPROM.put(0, settings);
@@ -275,7 +285,7 @@ void loadSettings() {
 
   // Gunakan nilai hasil load
   modeWarnaOtomatis = settings.modeWarnaOtomatis;
-  modeOnline = settings.modeOnline;
+  //modeOnline = settings.modeOnline;
   manualR = settings.manualR;
   manualG = settings.manualG;
   manualB = settings.manualB;
@@ -288,6 +298,7 @@ void loadSettings() {
   brightness = settings.kecerahan;
   volumeDfPlayer = settings.volumeDfplayer;
   modeSwitchTemp = settings. modeSwitchTempp;
+  Serial.println("brightness: " + String(brightness));
 }
 
 
@@ -297,33 +308,31 @@ void setup() {
   EEPROM.begin(512);  // Inisialisasi EEPROM
   strip.begin();
   Wire.begin();
-  //loadSettings();     // Load data ke variabel
+  loadSettings();     // Load data ke variabel
   
   strip.setBrightness(brightness);
   //myDFPlayer.volume(volumeDfPlayer);     // Volume dari 0 - 30
-  modeOnline?ONLINE():AP_init();
+  AP_init();
   Serial.println();
   Serial.println("modeOnline: " + String(modeOnline));
   Serial.println("READY");
 }
 
 void loop() {
+  checkClientConnected();
   if (modeOnline) {
-    ArduinoOTA.handle();
-    getClockNTP();
-  } else {
     server.handleClient();
+    webota.handle();
+  } else {
     getClockRTC(); // dari RTC
-  
+    timerHue();
 
-  timerHue();
-
-  static uint32_t lastToggle = 0;
-  static bool toggleState = false;
+    static uint32_t lastToggle = 0;
+    static bool toggleState = false;
 
   if (modeSwitchTemp) {
     uint32_t now = millis();
-    if (now - lastToggle > 5000) {
+    if (now - lastToggle > 10000) {
       toggleState = !toggleState;
       lastToggle = now;
     }
@@ -347,6 +356,27 @@ void loop() {
  }
 }
 
+// =========================
+// Cek apakah ada client di AP
+// =========================
+void checkClientConnected() {
+  static uint32_t lastCheck = 0;
+  static uint8_t lastClientCount = 0;
+  
+  if (millis() - lastCheck > 2000) { // Cek tiap 2 detik
+    lastCheck = millis();
+
+    uint8_t clientCount = WiFi.softAPgetStationNum();
+ 
+    if (clientCount != lastClientCount) {
+      
+      clientCount==1?modeOnline = 1 : modeOnline = 0;
+      lastClientCount = clientCount;
+      Serial.println("clientCount: " + String(clientCount));
+      strip.clear();
+    }
+  }
+}
 
 void showClock(uint32_t color) {
   DisplayNumber(h1, 3, color);
@@ -366,7 +396,7 @@ void checkHourlyChime() {
   if (now.minute() == 0 && now.second() == 0 && now.hour() != lastHourlyPlay) {
     uint8_t jam = now.hour() % 12;
     if (jam == 0) jam = 12;  // Ubah 0 jadi 12
-
+    Serial.println("update jam: " + String(jam));
     myDFPlayer.playFolder(1,jam);   // Misalnya track 1-12 adalah suara jam
     isPlaying = true;
     lastHourlyPlay = now.hour();  // Simpan jam terakhir dimainkan
@@ -477,7 +507,7 @@ void showDots(uint32_t color) {
 }
 
 void timerHue() {
-  const uint8_t delayHue = 30;
+  const uint8_t delayHue = 100;
   static uint32_t tmrsaveHue = 0;
   uint32_t tmr = millis();
 
