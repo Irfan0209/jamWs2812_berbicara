@@ -62,6 +62,7 @@ uint8_t dotsOn = 0;
 // MODE
 bool modeWarnaOtomatis = true;
 bool modeOnline = false;
+bool modeSwitchTemp = true;
 
 // MANUAL COLOR
 uint8_t manualR = 255, manualG = 0, manualB = 0;
@@ -85,11 +86,13 @@ IPAddress subnet(255, 255, 255, 0);
 struct PanelSettings {
   bool modeWarnaOtomatis;
   bool modeOnline;
+  bool modeSwitchTempp;
   uint8_t manualR, manualG, manualB;
   uint8_t alarm1Hour, alarm1Minute, alarm1Sound;
   uint8_t alarm2Hour, alarm2Minute, alarm2Sound;
   uint8_t kecerahan;
   uint8_t volumeDfplayer;
+  
 };
 
 PanelSettings settings;
@@ -123,6 +126,7 @@ long numberss[] = {
   0b1111101,  // [24] A
   0b1111100,  // [25] P
   0b1011011,  // [26] S
+  //0b1111000   // [27] '
 };
 
 
@@ -187,14 +191,24 @@ void handleCommand() {
 
     settings.modeOnline = modeOnline;
     saveSettings();
+    delay(1000);
+    ESP.restart();
 
   } else if (cmd == "MODE_OFFLINE") {
     modeOnline = false;
 
     settings.modeOnline = modeOnline;
     saveSettings();
+    delay(1000);
+    ESP.restart();
 
-  } else if (cmd.startsWith("ALARM1:")) {
+  } else if (cmd == "MODE_SWITCH:") {
+    modeSwitchTemp = cmd.substring(12).toInt();
+
+    settings.modeSwitchTempp = modeSwitchTemp;
+    saveSettings();
+
+  }else if (cmd.startsWith("ALARM1:")) {
     alarm1Hour = cmd.substring(7, 9).toInt();
     alarm1Minute = cmd.substring(10, 12).toInt();
     alarm1Sound = cmd.substring(13).toInt();
@@ -227,8 +241,6 @@ void AP_init() {
 
   server.on("/set", handleCommand);
   server.begin();
-//  webSocket.begin();
-//  webSocket.onEvent(webSocketEvent);
 }
 
 void ONLINE() {
@@ -275,6 +287,7 @@ void loadSettings() {
   alarm2Sound = settings.alarm2Sound;
   brightness = settings.kecerahan;
   volumeDfPlayer = settings.volumeDfplayer;
+  modeSwitchTemp = settings. modeSwitchTempp;
 }
 
 
@@ -289,32 +302,51 @@ void setup() {
   strip.setBrightness(brightness);
   //myDFPlayer.volume(volumeDfPlayer);     // Volume dari 0 - 30
   modeOnline?ONLINE():AP_init();
-//  Time.setHour(h);
-//  Time.setMinute(m);
-//  Time.setSecond(s);
+  Serial.println();
   Serial.println("modeOnline: " + String(modeOnline));
   Serial.println("READY");
 }
 
 void loop() {
-  server.handleClient();
-//  if (modeOnline) {
-//     ArduinoOTA.handle();
-//     getClockNTP();
-//  } else {
+  if (modeOnline) {
+    ArduinoOTA.handle();
+    getClockNTP();
+  } else {
+    server.handleClient();
     getClockRTC(); // dari RTC
-    
-//
-//  }
+  
 
   timerHue();
-  uint32_t colorNow = getCurrentColor();
 
-  showClock(colorNow);
-  showDots(strip.Color(255, 0, 0));
-//  checkAlarm();
-//  checkHourlyChime();   // bunyi tiap jam
+  static uint32_t lastToggle = 0;
+  static bool toggleState = false;
+
+  if (modeSwitchTemp) {
+    uint32_t now = millis();
+    if (now - lastToggle > 5000) {
+      toggleState = !toggleState;
+      lastToggle = now;
+    }
+
+    if (toggleState) {
+      showClock(getCurrentColor());
+      showDots(0xFF0000); // Merah
+    } else {
+      showTemp();
+      showDots(0x000000); // Mati
+    }
+
+  } else {
+    showClock(getCurrentColor());
+    showDots(0xFF0000); // Merah
+  }
+
+  // Aktifkan kembali jika perlu:
+  // checkAlarm();
+  // checkHourlyChime();
+ }
 }
+
 
 void showClock(uint32_t color) {
   DisplayNumber(h1, 3, color);
@@ -323,12 +355,19 @@ void showClock(uint32_t color) {
   DisplayNumber(m2, 0, color);
 }
 
+void showTemp(){
+  DisplayNumber(getTempp() / 10,3,strip.Color(0,255,0));
+  DisplayNumber(getTempp() % 10,2,strip.Color(0,255,0));
+  DisplayNumber(11       ,1,strip.Color(0,255,0));
+  DisplayNumber(12       ,0,strip.Color(255,0,0));
+}
+
 void checkHourlyChime() {
   if (now.minute() == 0 && now.second() == 0 && now.hour() != lastHourlyPlay) {
     uint8_t jam = now.hour() % 12;
     if (jam == 0) jam = 12;  // Ubah 0 jadi 12
 
-    myDFPlayer.play(jam);   // Misalnya track 1-12 adalah suara jam
+    myDFPlayer.playFolder(1,jam);   // Misalnya track 1-12 adalah suara jam
     isPlaying = true;
     lastHourlyPlay = now.hour();  // Simpan jam terakhir dimainkan
   }
@@ -337,11 +376,11 @@ void checkHourlyChime() {
 void checkAlarm() {
   if (!isPlaying) {
     if (now.hour() == alarm1Hour && now.minute() == alarm1Minute && now.second() == 0) {
-      myDFPlayer.play(alarm1Sound);
+      myDFPlayer.playFolder(2,alarm1Sound);
       isPlaying = true;
     }
     if (now.hour() == alarm2Hour && now.minute() == alarm2Minute && now.second() == 0) {
-      myDFPlayer.play(alarm2Sound);
+      myDFPlayer.playFolder(2,alarm2Sound);
       isPlaying = true;
     }
   }
@@ -420,6 +459,11 @@ void getClockNTP()
   m1 = Clock.getMinutes() / 10;
   m2 = Clock.getMinutes() % 10;
 }
+
+int getTempp(){
+  return Time.getTemperature();
+}
+
 void showDots(uint32_t color) {
   now = RTC.now();
   bool isOn = now.second() % 2;
@@ -433,7 +477,7 @@ void showDots(uint32_t color) {
 }
 
 void timerHue() {
-  const uint8_t delayHue = 2;
+  const uint8_t delayHue = 30;
   static uint32_t tmrsaveHue = 0;
   uint32_t tmr = millis();
 
