@@ -135,111 +135,145 @@ void handleRoot() {
   server.send(200, "text/plain", "Jam LED Siap!");
 }
 
-void handleCommand() {
- String DATA = "";
+void handleSetTime() {
+  //if (!server.hasArg("plain")) return server.send(400, "text/plain", "Bad Request");
 
   if (server.hasArg("PLAY")) {
-    DATA = server.arg("PLAY");
-    uint8_t track = DATA.substring(5, 7).toInt();
-    myDFPlayer.playFolder(2,track);
+    uint8_t track = server.arg("PLAY").toInt();
+    Serial.println("[PLAY] Track: " + String(track));
+    myDFPlayer.playFolder(2, track);
     isPlaying = true;
 
   } else if (server.hasArg("STOP")) {
+    Serial.println("[STOP] DFPlayer stop");
     stopDFPlayer();
 
   } else if (server.hasArg("BRIGHTNESS")) {
-    DATA = server.arg("BRIGHTNESS");
-    brightness = DATA.substring(11, 14).toInt();
-    uint8_t data = map(brightness,0,100,1,255);
+    brightness = server.arg("BRIGHTNESS").toInt();
+    uint8_t data = map(brightness, 0, 100, 1, 255);
     strip.setBrightness(data);
-    Serial.println("brightness: " + String(data));
+    Serial.println("[BRIGHTNESS] Set to: " + String(data));
     settings.kecerahan = data;
     saveSettings();
 
   } else if (server.hasArg("VOLUME")) {
-    DATA = server.arg("VOLUME");
-    volumeDfPlayer = DATA.substring(7, 9).toInt();
-    uint8_t data = map(volumeDfPlayer,0,100,0,29);
+    volumeDfPlayer = server.arg("VOLUME").toInt();
+    uint8_t data = map(volumeDfPlayer, 0, 100, 0, 29);
     myDFPlayer.volume(data);
+    Serial.println("[VOLUME] Set to: " + String(data));
     settings.volumeDfplayer = data;
     saveSettings();
 
   } else if (server.hasArg("SET_TIME")) {
-    DATA = server.arg("SET_TIME");
-    int h = DATA.substring(9, 11).toInt();
-    int m = DATA.substring(12, 14).toInt();
-    int s = DATA.substring(15, 17).toInt();
+  String timeStr = server.arg("SET_TIME");
+  Serial.println("[DEBUG] SET_TIME raw input: " + timeStr);
+
+  int h = 0, m = 0, s = 0;
+
+  // Parsing dengan format: SET_TIME=HH:MM:SS
+  int idx1 = timeStr.indexOf(':');
+  int idx2 = timeStr.indexOf(':', idx1 + 1);
+
+  if (idx1 > 0 && idx2 > idx1) {
+    h = timeStr.substring(0, idx1).toInt();
+    m = timeStr.substring(idx1 + 1, idx2).toInt();
+    s = timeStr.substring(idx2 + 1).toInt();
+
     Time.setHour(h);
     Time.setMinute(m);
     Time.setSecond(s);
 
-  } else if (server.hasArg("COLOR")) {
-    DATA = server.arg("COLOR");
+    Serial.println("[SET_TIME] Set to: " + String(h) + ":" + String(m) + ":" + String(s));
+  } else {
+    Serial.println("[SET_TIME] Invalid format! Use HH:MM:SS");
+  }
+} else if (server.hasArg("COLOR")) {
+  String colorStr = server.arg("COLOR");
+  Serial.println("[DEBUG] COLOR raw input: " + colorStr);
+
+  // Parsing dengan format: COLOR=R,G,B
+  int r = 0, g = 0, b = 0;
+  int idx1 = colorStr.indexOf(',');
+  int idx2 = colorStr.indexOf(',', idx1 + 1);
+
+  if (idx1 > 0 && idx2 > idx1) {
+    r = colorStr.substring(0, idx1).toInt();
+    g = colorStr.substring(idx1 + 1, idx2).toInt();
+    b = colorStr.substring(idx2 + 1).toInt();
+
+    manualR = r;
+    manualG = g;
+    manualB = b;
     modeWarnaOtomatis = false;
-    manualR = DATA.substring(6, 9).toInt();
-    manualG = DATA.substring(10, 13).toInt();
-    manualB = DATA.substring(14, 17).toInt();
+
+    Serial.println("[COLOR] R: " + String(r) + " G: " + String(g) + " B: " + String(b));
 
     settings.modeWarnaOtomatis = modeWarnaOtomatis;
-    settings.manualR = manualR;
-    settings.manualG = manualG;
-    settings.manualB = manualB;
+    settings.manualR = r;
+    settings.manualG = g;
+    settings.manualB = b;
     saveSettings();
-
-  } else if (server.hasArg("AUTO_COLOR")) {
+  } else {
+    Serial.println("[COLOR] Invalid format! Use R,G,B");
+  }
+}
+ else if (server.hasArg("AUTO_COLOR")) {
     modeWarnaOtomatis = true;
-
+    Serial.println("[AUTO_COLOR] Enabled");
     settings.modeWarnaOtomatis = modeWarnaOtomatis;
     saveSettings();
 
-  }/* else if (cmd == "MODE_ONLINE") {
-    modeOnline = true;
-    strip.clear();
-    settings.modeOnline = modeOnline;
-    saveSettings();
-//    delay(1000);
-//    ESP.restart();
-
-  } else if (cmd == "MODE_OFFLINE") {
-    modeOnline = false;
-
-    settings.modeOnline = modeOnline;
-    saveSettings();
-//    delay(1000);
-//    ESP.restart();
-
-  }*/ else if (server.hasArg("MODE_SWITCH")) {
-    DATA = server.arg("MODE_SWITCH");
-    modeSwitchTemp = DATA.substring(12).toInt();
-
+  } else if (server.hasArg("MODE_SWITCH")) {
+    modeSwitchTemp = server.arg("MODE_SWITCH").toInt();
+    Serial.println("[MODE_SWITCH] Mode: " + String(modeSwitchTemp));
     settings.modeSwitchTempp = modeSwitchTemp;
     saveSettings();
 
-  }else if (server.hasArg("ALARM1:")) {
-    DATA = server.arg("ALARM1");
-    alarm1Hour = DATA.substring(7, 9).toInt();
-    alarm1Minute = DATA.substring(10, 12).toInt();
-    alarm1Sound = DATA.substring(13).toInt();
+  } else if (server.hasArg("ALARM1")) {
+  String data = server.arg("ALARM1");
+  int colon1 = data.indexOf(':');
+  int colon2 = data.indexOf(':', colon1 + 1);
+
+  if (colon1 != -1 && colon2 != -1) {
+    alarm1Hour = data.substring(0, colon1).toInt();
+    alarm1Minute = data.substring(colon1 + 1, colon2).toInt();
+    alarm1Sound = data.substring(colon2 + 1).toInt();
+
+    Serial.println("[ALARM1] " + String(alarm1Hour) + ":" + String(alarm1Minute) + " Sound: " + String(alarm1Sound));
 
     settings.alarm1Hour = alarm1Hour;
     settings.alarm1Minute = alarm1Minute;
     settings.alarm1Sound = alarm1Sound;
     saveSettings();
+  } else {
+    Serial.println("[ALARM1] Format salah. Gunakan ALARM1=HH:MM:SOUND");
+  }
 
-  } else if (server.hasArg("ALARM2:")) {
-    DATA = server.arg("ALARM2");
-    alarm2Hour = DATA.substring(7, 9).toInt();
-    alarm2Minute = DATA.substring(10, 12).toInt();
-    alarm2Sound = DATA.substring(13).toInt();
+} else if (server.hasArg("ALARM2")) {
+  String data = server.arg("ALARM2");
+  int colon1 = data.indexOf(':');
+  int colon2 = data.indexOf(':', colon1 + 1);
+
+  if (colon1 != -1 && colon2 != -1) {
+    alarm2Hour = data.substring(0, colon1).toInt();
+    alarm2Minute = data.substring(colon1 + 1, colon2).toInt();
+    alarm2Sound = data.substring(colon2 + 1).toInt();
+
+    Serial.println("[ALARM2] " + String(alarm2Hour) + ":" + String(alarm2Minute) + " Sound: " + String(alarm2Sound));
 
     settings.alarm2Hour = alarm2Hour;
     settings.alarm2Minute = alarm2Minute;
     settings.alarm2Sound = alarm2Sound;
     saveSettings();
+  } else {
+    Serial.println("[ALARM2] Format salah. Gunakan ALARM2=HH:MM:SOUND");
   }
+}
+
 
   server.send(200, "text/plain", "OK");
 }
+
 
 
 void AP_init() {
@@ -248,9 +282,9 @@ void AP_init() {
   WiFi.softAP(ssid, password);
   WiFi.setSleepMode(WIFI_NONE_SLEEP);
 
-  server.on("/set", handleCommand);
+  server.on("/set", handleSetTime);
   server.begin();
-  webota.init(8888, "/update");
+  webota.init(8080, "/update");
 }
 
 /*void ONLINE() {
@@ -351,8 +385,8 @@ void loop() {
   }
 
   // Aktifkan kembali jika perlu:
-  // checkAlarm();
-  // checkHourlyChime();
+   checkAlarm();
+   checkHourlyChime();
  }
 }
 
@@ -371,9 +405,10 @@ void checkClientConnected() {
     if (clientCount != lastClientCount) {
       
       clientCount==1?modeOnline = 1 : modeOnline = 0;
-      lastClientCount = clientCount;
       Serial.println("clientCount: " + String(clientCount));
       strip.clear();
+      strip.show();
+      lastClientCount = clientCount;
     }
   }
 }
@@ -397,23 +432,25 @@ void checkHourlyChime() {
     uint8_t jam = now.hour() % 12;
     if (jam == 0) jam = 12;  // Ubah 0 jadi 12
     Serial.println("update jam: " + String(jam));
-    myDFPlayer.playFolder(1,jam);   // Misalnya track 1-12 adalah suara jam
-    isPlaying = true;
+    //myDFPlayer.playFolder(1,jam);   // Misalnya track 1-12 adalah suara jam
+   // isPlaying = true;
     lastHourlyPlay = now.hour();  // Simpan jam terakhir dimainkan
   }
 }
 
 void checkAlarm() {
-  if (!isPlaying) {
+  //if (!isPlaying) {
     if (now.hour() == alarm1Hour && now.minute() == alarm1Minute && now.second() == 0) {
-      myDFPlayer.playFolder(2,alarm1Sound);
-      isPlaying = true;
+      //myDFPlayer.playFolder(2,alarm1Sound);
+     // isPlaying = true;
+      Serial.println("ALARM 1 RUN");
     }
     if (now.hour() == alarm2Hour && now.minute() == alarm2Minute && now.second() == 0) {
-      myDFPlayer.playFolder(2,alarm2Sound);
-      isPlaying = true;
+      //myDFPlayer.playFolder(2,alarm2Sound);
+     // isPlaying = true;
+      Serial.println("ALARM 2 RUN");
     }
-  }
+ // }
 }
 
 void stopDFPlayer() {
