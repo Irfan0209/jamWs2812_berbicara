@@ -5,7 +5,7 @@
 #include <WiFiUdp.h>
 #include <ESP8266mDNS.h>
 
-//#include <WiFiManager.h>
+#include <Prayer.h>
 
 #include <DS3231.h>
 #include <SPI.h>
@@ -36,7 +36,7 @@ const long utcOffsetInSeconds = 25200;
 RTClib RTC;
 DS3231 Time;
 DateTime now;
-//WiFiManager wifi;
+Prayer JWS;
 Adafruit_NeoPixel strip(LED, PINLED, NEO_GRB + NEO_KHZ800);
 DFRobotDFPlayerMini myDFPlayer;
 WiFiUDP ntpUDP;
@@ -96,6 +96,24 @@ struct PanelSettings {
 };
 
 PanelSettings settings;
+
+//=========================//
+//==variabel alarm adzan===//
+//=========================//
+struct Config {
+  uint8_t durasiadzan = 40;
+  uint8_t altitude = 10;
+  double latitude = -7.364057;
+  double longitude = 112.646222;
+  uint8_t zonawaktu = 7;
+  bool       adzan         = 0;
+  bool       reset_x       = 0; 
+  uint8_t    sholatNow     = -1;
+};
+
+Config config;
+
+uint8_t dataIhty[]      = {0,0,0,0,0,0};
 
 long numberss[] = {
   //  7654321
@@ -168,26 +186,46 @@ void handleSetTime() {
   String timeStr = server.arg("SET_TIME");
   Serial.println("[DEBUG] SET_TIME raw input: " + timeStr);
 
-  int h = 0, m = 0, s = 0;
+  int tahun, bulan, tanggal, dow, jam, menit, detik;
 
-  // Parsing dengan format: SET_TIME=HH:MM:SS
-  int idx1 = timeStr.indexOf(':');
-  int idx2 = timeStr.indexOf(':', idx1 + 1);
+  // Parsing format: YYYY-MM-DD-DOW-HH:MM:SS
+  int idx1 = timeStr.indexOf('-');
+  int idx2 = timeStr.indexOf('-', idx1 + 1);
+  int idx3 = timeStr.indexOf('-', idx2 + 1);
+  int idx4 = timeStr.indexOf('-', idx3 + 1);
+  int idx5 = timeStr.indexOf(':', idx4 + 1);
+  int idx6 = timeStr.indexOf(':', idx5 + 1);
 
-  if (idx1 > 0 && idx2 > idx1) {
-    h = timeStr.substring(0, idx1).toInt();
-    m = timeStr.substring(idx1 + 1, idx2).toInt();
-    s = timeStr.substring(idx2 + 1).toInt();
+  if (idx1 > 0 && idx2 > idx1 && idx3 > idx2 && idx4 > idx3 && idx5 > idx4 && idx6 > idx5) {
+    tahun   = timeStr.substring(0, idx1).toInt();
+    bulan   = timeStr.substring(idx1 + 1, idx2).toInt();
+    tanggal = timeStr.substring(idx2 + 1, idx3).toInt();
+    dow     = timeStr.substring(idx3 + 1, idx4).toInt();
+    jam     = timeStr.substring(idx4 + 1, idx5).toInt();
+    menit   = timeStr.substring(idx5 + 1, idx6).toInt();
+    detik   = timeStr.substring(idx6 + 1).toInt();
 
-    Time.setHour(h);
-    Time.setMinute(m);
-    Time.setSecond(s);
+    // Set RTC atau waktu sistem Anda
+    // Set ke waktu RTC/objek Time Anda
+    Time.setYear(tahun);
+    Time.setMonth(bulan);
+    Time.setDate(tanggal);
+    Time.setDoW(dow);
+    Time.setHour(jam);
+    Time.setMinute(menit);
+    Time.setSecond(detik);
 
-    Serial.println("[SET_TIME] Set to: " + String(h) + ":" + String(m) + ":" + String(s));
+    // Tampilkan ke Serial Monitor
+//    Serial.println("[SET_TIME] Waktu disetel:");
+//    Serial.println("  Tanggal : " + String(tanggal) + "-" + String(bulan) + "-" + String(tahun));
+//    Serial.println("  Hari (DoW): " + String(dow));
+//    Serial.println("  Jam     : " + String(jam) + ":" + String(menit) + ":" + String(detik));
   } else {
-    Serial.println("[SET_TIME] Invalid format! Use HH:MM:SS");
+    //Serial.println("[SET_TIME] Format salah! Gunakan: YYYY-MM-DD-DOW-HH:MM:SS");
   }
-} else if (server.hasArg("COLOR")) {
+}
+
+ else if (server.hasArg("COLOR")) {
   String colorStr = server.arg("COLOR");
   Serial.println("[DEBUG] COLOR raw input: " + colorStr);
 
@@ -348,7 +386,6 @@ void setup() {
   //myDFPlayer.volume(volumeDfPlayer);     // Volume dari 0 - 30
   AP_init();
   Serial.println();
-  Serial.println("modeOnline: " + String(modeOnline));
   Serial.println("READY");
 }
 
@@ -360,7 +397,9 @@ void loop() {
   } else {
     getClockRTC(); // dari RTC
     timerHue();
-
+    islam();
+    check();
+    
     static uint32_t lastToggle = 0;
     static bool toggleState = false;
 
