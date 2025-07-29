@@ -18,6 +18,7 @@
 #include <ArduinoOTA.h>
 #include "DFRobotDFPlayerMini.h"
 
+#define BUZZ D4
 #define PINLED D5
 #define LEDS_PER_SEG 5
 #define LEDS_PER_DOT 4
@@ -78,6 +79,8 @@ uint8_t volumeDfPlayer;
 bool isPlaying = false;
 
 uint8_t lastHourlyPlay = 255;  // Nilai tidak valid awalnya
+
+bool stateBuzzWar = false;
 
 IPAddress local_IP(192, 168, 2, 1);
 IPAddress gateway(192, 168, 2, 1);
@@ -321,6 +324,20 @@ void handleSetTime() {
   server.send(200, "text/plain", "OK");
 }
 
+void handleGetData() {
+  now = RTC.now();
+  uint8_t jam = now.hour();
+  uint8_t menit = now.minute();
+  uint8_t detik = now.second();
+
+  // Ambil suhu (misalnya dari variabel global suhuSensor)
+  float suhu = getTempp(); // Pastikan variabel ini diperbarui rutin dari sensor
+
+  // Kirim data ke client
+  String response = "JAM=" + String(jam) + ":" + String(menit) + ":" + String(detik);
+  response += " SUHU=" + String(suhu, 1);
+  server.send(200, "text/plain", response);
+}
 
 
 void AP_init() {
@@ -329,10 +346,11 @@ void AP_init() {
   WiFi.softAP(ssid, password);
   WiFi.setSleepMode(WIFI_NONE_SLEEP);
 
-  server.on("/set", handleSetTime);
+  server.on("/set", handleSetTime);       // endpoint untuk set waktu
+  server.on("/getdata", handleGetData);   // endpoint baru untuk ambil jam & suhu
   server.begin();
-  
 }
+
 
 void ONLINE() {
   WiFi.mode(WIFI_STA);
@@ -403,14 +421,15 @@ void loadSettings() {
 
 void setup() {
   Serial.begin(115200);
-  //myDFPlayer.begin(Serial);  // DFPlayer RX → TX ESP8266
+  pinMode(BUZZ,OUTPUT);
+  myDFPlayer.begin(Serial);  // DFPlayer RX → TX ESP8266
   EEPROM.begin(512);  // Inisialisasi EEPROM
   strip.begin();
   Wire.begin();
   loadSettings();     // Load data ke variabel
   
   strip.setBrightness(brightness);
-  //myDFPlayer.volume(volumeDfPlayer);     // Volume dari 0 - 30
+  myDFPlayer.volume(volumeDfPlayer);     // Volume dari 0 - 30
   settings.modeOnline?ONLINE() : AP_init();
   Serial.println();
   Serial.println("READY");
@@ -419,6 +438,7 @@ void setup() {
 void loop() {
   if (settings.modeOnline) {
     ArduinoOTA.handle();  // OTA update jika mode online
+    buzzerUpload(1000);
     return;
   }
 
@@ -427,6 +447,7 @@ void loop() {
 
   if (modeSetting) {
     server.handleClient();  // Web config aktif jika mode setting
+    buzzerUpload(250);
     return;
   }
 
@@ -435,6 +456,7 @@ void loop() {
   timerHue();       // Update warna
   islam();          // Fungsi terkait waktu sholat
   check();          // Cek parameter lainnya
+  buzzerWarning(stateBuzzWar);
 
   static uint32_t lastToggle = 0;
   static bool toggleState = false;
@@ -463,6 +485,7 @@ void loop() {
   // Pengecekan alarm dan bunyi jam
   checkAlarm();
   checkHourlyChime();
+  
 }
 
 
@@ -486,6 +509,7 @@ void checkClientConnected() {
       strip.show();
       lastClientCount = clientCount;
     }
+    
   }
 }
 
@@ -508,7 +532,7 @@ void checkHourlyChime() {
     uint8_t jam = now.hour() % 12;
     if (jam == 0) jam = 12;  // Ubah 0 jadi 12
     Serial.println("update jam: " + String(jam));
-    //myDFPlayer.playFolder(1,jam);   // Misalnya track 1-12 adalah suara jam
+    myDFPlayer.playFolder(1,jam);   // Misalnya track 1-12 adalah suara jam
    // isPlaying = true;
     lastHourlyPlay = now.hour();  // Simpan jam terakhir dimainkan
   }
@@ -517,12 +541,12 @@ void checkHourlyChime() {
 void checkAlarm() {
   //if (!isPlaying) {
     if (now.hour() == alarm1Hour && now.minute() == alarm1Minute && now.second() == 0) {
-      //myDFPlayer.playFolder(2,alarm1Sound);
+      myDFPlayer.playFolder(2,alarm1Sound);
      // isPlaying = true;
       Serial.println("ALARM 1 RUN");
     }
     if (now.hour() == alarm2Hour && now.minute() == alarm2Minute && now.second() == 0) {
-      //myDFPlayer.playFolder(2,alarm2Sound);
+      myDFPlayer.playFolder(2,alarm2Sound);
      // isPlaying = true;
       Serial.println("ALARM 2 RUN");
     }
@@ -620,7 +644,7 @@ void showDots(uint32_t color) {
 }
 
 void timerHue() {
-  const uint8_t delayHue = 200;
+  const uint8_t delayHue = 8;
   static uint32_t tmrsaveHue = 0;
   uint32_t tmr = millis();
 
@@ -649,3 +673,55 @@ uint32_t Wheel(byte WheelPos) {
   WheelPos -= 170;
   return strip.Color(WheelPos * 3, 255 - WheelPos * 3, 0);
 }
+
+void buzzerUpload(uint16_t Delay){
+    if(config.adzan) return;
+    
+    static bool state;
+    static uint32_t save = 0;
+    static uint8_t  con = 0;
+    uint32_t tmr = millis();
+    
+    if(tmr - save > Delay ){
+      save = tmr;
+      state = !state;
+      digitalWrite(BUZZ, state);
+      
+    }
+}
+
+void buzzerWarning(int cek){
+   if(!config.adzan) return;
+   
+   static bool state = false;
+   static uint32_t save = 0;
+   uint32_t tmr = millis();
+   static uint8_t con = 0;
+    
+    if(tmr - save > 500 && cek == 1){//2500
+      save = tmr;
+      state = !state;
+      digitalWrite(BUZZ, state);
+      //Serial.println("active");
+      if(con <= 60) { con++; }
+      if(con == 61) { cek = 0; con = 0; state = false; stateBuzzWar = 0; config.adzan = 0;}
+      //Serial.println("con:" + String(con));
+    } 
+    
+}
+
+/*
+void Buzzer(uint8_t state)
+  {
+    if(!stateBuzzer) return;
+    
+    switch(state){
+      case 0 :
+        digitalWrite(BUZZ,HIGH);
+      break;
+      case 1 :
+        digitalWrite(BUZZ,LOW);
+      break;
+    };
+  }
+*/

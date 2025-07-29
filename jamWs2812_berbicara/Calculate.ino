@@ -49,6 +49,7 @@ void check() {
                 config.sholatNow = counter;
                 config.adzan = 1;
                 adzanFlag[counter] = true;
+                stateBuzzWar = 1;
                 Serial.println("ADZAN RUN");
               }    
            }
