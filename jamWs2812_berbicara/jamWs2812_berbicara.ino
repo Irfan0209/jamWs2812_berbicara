@@ -15,7 +15,7 @@
 
 #include <ESP8266WebServer.h>
 
-#include <WebOTA.h>
+#include <ArduinoOTA.h>
 #include "DFRobotDFPlayerMini.h"
 
 #define PINLED D5
@@ -29,7 +29,7 @@ char password[20] = "00000000";
 
 const char* otaSsid = "KELUARGA02";
 const char* otaPass = "suhartono";
-const char* otaHost = "SERVER";
+const char* otaHost = "JAM-STRIP";
 
 const long utcOffsetInSeconds = 25200;
 
@@ -61,7 +61,7 @@ uint8_t dotsOn = 0;
 
 // MODE
 bool modeWarnaOtomatis = true;
-bool modeOnline = false;
+bool modeSetting = false;
 bool modeSwitchTemp = true;
 
 // MANUAL COLOR
@@ -84,9 +84,10 @@ IPAddress gateway(192, 168, 2, 1);
 IPAddress subnet(255, 255, 255, 0);
 
 struct PanelSettings {
-  bool modeWarnaOtomatis;
-  bool modeOnline;
-  bool modeSwitchTempp;
+  bool modeWarnaOtomatis = true;
+  bool modeSetting;
+  bool modeSwitchTempp = true;
+  bool modeOnline = false;
   uint8_t manualR, manualG, manualB;
   uint8_t alarm1Hour, alarm1Minute, alarm1Sound;
   uint8_t alarm2Hour, alarm2Minute, alarm2Sound;
@@ -166,6 +167,14 @@ void handleSetTime() {
     Serial.println("[STOP] DFPlayer stop");
     stopDFPlayer();
 
+  } else if (server.hasArg("MODE")) {
+    uint8_t data = server.arg("MODE").toInt();
+    settings.modeOnline = data;
+     Serial.println("[MODE ONLINE] Set to: " + String(data));
+    saveSettings();
+    delay(1000);
+    ESP.restart();
+    
   } else if (server.hasArg("BRIGHTNESS")) {
     brightness = server.arg("BRIGHTNESS").toInt();
     uint8_t data = map(brightness, 0, 100, 1, 255);
@@ -322,10 +331,10 @@ void AP_init() {
 
   server.on("/set", handleSetTime);
   server.begin();
-  webota.init(8080, "/update");
+  
 }
 
-/*void ONLINE() {
+void ONLINE() {
   WiFi.mode(WIFI_STA);
   WiFi.begin(otaSsid, otaPass);
 
@@ -338,14 +347,16 @@ void AP_init() {
   ArduinoOTA.setHostname(otaHost);
  
   ArduinoOTA.onEnd([]() {
-    //Serial.println("restart=1");
+    Serial.println("restart");
+    settings.modeOnline = 0;
+    saveSettings();
     delay(1000);
     ESP.restart();
   });
   
   ArduinoOTA.begin();
   //Serial.println("OTA Ready");
-}*/
+}
 
 void saveSettings() {
   EEPROM.put(0, settings);
@@ -353,11 +364,10 @@ void saveSettings() {
 }
 
 void loadSettings() {
-  EEPROM.get(0, settings);
+  EEPROM.get(0, settings); // Load struct dari EEPROM address 0
 
-  // Gunakan nilai hasil load
+  // Simpan ke variabel global
   modeWarnaOtomatis = settings.modeWarnaOtomatis;
-  //modeOnline = settings.modeOnline;
   manualR = settings.manualR;
   manualG = settings.manualG;
   manualB = settings.manualB;
@@ -369,10 +379,27 @@ void loadSettings() {
   alarm2Sound = settings.alarm2Sound;
   brightness = settings.kecerahan;
   volumeDfPlayer = settings.volumeDfplayer;
-  modeSwitchTemp = settings. modeSwitchTempp;
-  Serial.println("brightness: " + String(brightness));
-}
+  modeSwitchTemp = settings.modeSwitchTempp;
 
+  // Tampilkan semua nilai ke Serial Monitor
+//  Serial.println(F("=== Data dari EEPROM ==="));
+//  Serial.println("modeOnline        : " + String(settings.modeOnline));
+//  Serial.println("modeSetting       : " + String(settings.modeSetting));
+//  Serial.println("modeWarnaOtomatis : " + String(settings.modeWarnaOtomatis));
+//  Serial.println("manualR           : " + String(settings.manualR));
+//  Serial.println("manualG           : " + String(settings.manualG));
+//  Serial.println("manualB           : " + String(settings.manualB));
+//  Serial.println("alarm1Hour        : " + String(settings.alarm1Hour));
+//  Serial.println("alarm1Minute      : " + String(settings.alarm1Minute));
+//  Serial.println("alarm1Sound       : " + String(settings.alarm1Sound));
+//  Serial.println("alarm2Hour        : " + String(settings.alarm2Hour));
+//  Serial.println("alarm2Minute      : " + String(settings.alarm2Minute));
+//  Serial.println("alarm2Sound       : " + String(settings.alarm2Sound));
+//  Serial.println("kecerahan         : " + String(settings.kecerahan));
+//  Serial.println("volumeDfplayer    : " + String(settings.volumeDfplayer));
+//  Serial.println("modeSwitchTemp    : " + String(settings.modeSwitchTempp));
+//  Serial.println(F("========================\n"));
+}
 
 void setup() {
   Serial.begin(115200);
@@ -384,27 +411,37 @@ void setup() {
   
   strip.setBrightness(brightness);
   //myDFPlayer.volume(volumeDfPlayer);     // Volume dari 0 - 30
-  AP_init();
+  settings.modeOnline?ONLINE() : AP_init();
   Serial.println();
   Serial.println("READY");
 }
 
 void loop() {
-  checkClientConnected();
-  if (modeOnline) {
-    server.handleClient();
-    webota.handle();
-  } else {
-    getClockRTC(); // dari RTC
-    timerHue();
-    islam();
-    check();
-    
-    static uint32_t lastToggle = 0;
-    static bool toggleState = false;
+  if (settings.modeOnline) {
+    ArduinoOTA.handle();  // OTA update jika mode online
+    return;
+  }
+
+  // Mode Offline
+  checkClientConnected();  // Cek koneksi client
+
+  if (modeSetting) {
+    server.handleClient();  // Web config aktif jika mode setting
+    return;
+  }
+
+  // Mode normal (offline + tidak setting)
+  getClockRTC();    // Ambil waktu dari RTC
+  timerHue();       // Update warna
+  islam();          // Fungsi terkait waktu sholat
+  check();          // Cek parameter lainnya
+
+  static uint32_t lastToggle = 0;
+  static bool toggleState = false;
+  uint32_t now = millis();
 
   if (modeSwitchTemp) {
-    uint32_t now = millis();
+    // Tampilkan jam dan suhu bergantian setiap 10 detik
     if (now - lastToggle > 10000) {
       toggleState = !toggleState;
       lastToggle = now;
@@ -412,22 +449,22 @@ void loop() {
 
     if (toggleState) {
       showClock(getCurrentColor());
-      showDots(0xFF0000); // Merah
+      showDots(0xFF0000); // Titik merah
     } else {
       showTemp();
-      showDots(0x000000); // Mati
+      showDots(0x000000); // Titik mati
     }
-
   } else {
+    // Tampilkan jam saja
     showClock(getCurrentColor());
-    showDots(0xFF0000); // Merah
+    showDots(0xFF0000); // Titik merah
   }
 
-  // Aktifkan kembali jika perlu:
-   checkAlarm();
-   checkHourlyChime();
- }
+  // Pengecekan alarm dan bunyi jam
+  checkAlarm();
+  checkHourlyChime();
 }
+
 
 // =========================
 // Cek apakah ada client di AP
@@ -443,7 +480,7 @@ void checkClientConnected() {
  
     if (clientCount != lastClientCount) {
       
-      clientCount==1?modeOnline = 1 : modeOnline = 0;
+      clientCount==1?modeSetting = 1 : modeSetting = 0;
       Serial.println("clientCount: " + String(clientCount));
       strip.clear();
       strip.show();
@@ -583,7 +620,7 @@ void showDots(uint32_t color) {
 }
 
 void timerHue() {
-  const uint8_t delayHue = 100;
+  const uint8_t delayHue = 200;
   static uint32_t tmrsaveHue = 0;
   uint32_t tmr = millis();
 
