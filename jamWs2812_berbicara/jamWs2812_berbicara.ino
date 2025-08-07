@@ -18,7 +18,9 @@
 #include <ArduinoOTA.h>
 #include "DFRobotDFPlayerMini.h"
 
-#define BUZZ D4
+#include <SoftwareSerial.h>
+
+#define BUZZ D7
 #define PINLED D5
 #define LEDS_PER_SEG 5
 #define LEDS_PER_DOT 4
@@ -43,6 +45,8 @@ DFRobotDFPlayerMini myDFPlayer;
 WiFiUDP ntpUDP;
 NTPClient Clock(ntpUDP, "asia.pool.ntp.org", utcOffsetInSeconds);
 ESP8266WebServer server(80);
+SoftwareSerial softSerial(D3, D4); // RX, TX
+#define FPSerial softSerial
 
 uint8_t h1;
 uint8_t h2;
@@ -94,8 +98,8 @@ struct PanelSettings {
   uint8_t manualR, manualG, manualB;
   uint8_t alarm1Hour, alarm1Minute, alarm1Sound;
   uint8_t alarm2Hour, alarm2Minute, alarm2Sound;
-  uint8_t kecerahan;
-  uint8_t volumeDfplayer;
+  byte kecerahan;
+  byte volumeDfplayer;
   
 };
 
@@ -151,12 +155,6 @@ long numberss[] = {
   //0b1111000   // [27] '
 };
 
-
-
-void handleRoot() {
-  server.send(200, "text/plain", "Jam LED Siap!");
-}
-
 void handleSetTime() {
   //if (!server.hasArg("plain")) return server.send(400, "text/plain", "Bad Request");
 
@@ -180,7 +178,7 @@ void handleSetTime() {
     
   } else if (server.hasArg("BRIGHTNESS")) {
     brightness = server.arg("BRIGHTNESS").toInt();
-    uint8_t data = map(brightness, 0, 100, 1, 255);
+    byte data = map(brightness, 0, 100, 1, 255);
     strip.setBrightness(data);
     Serial.println("[BRIGHTNESS] Set to: " + String(data));
     settings.kecerahan = data;
@@ -188,7 +186,7 @@ void handleSetTime() {
 
   } else if (server.hasArg("VOLUME")) {
     volumeDfPlayer = server.arg("VOLUME").toInt();
-    uint8_t data = map(volumeDfPlayer, 0, 100, 0, 29);
+    byte data = map(volumeDfPlayer, 0, 100, 0, 29);
     myDFPlayer.volume(data);
     Serial.println("[VOLUME] Set to: " + String(data));
     settings.volumeDfplayer = data;
@@ -239,7 +237,7 @@ void handleSetTime() {
 
  else if (server.hasArg("COLOR")) {
   String colorStr = server.arg("COLOR");
-  Serial.println("[DEBUG] COLOR raw input: " + colorStr);
+  //Serial.println("[DEBUG] COLOR raw input: " + colorStr);
 
   // Parsing dengan format: COLOR=R,G,B
   int r = 0, g = 0, b = 0;
@@ -421,15 +419,28 @@ void loadSettings() {
 
 void setup() {
   Serial.begin(115200);
-  pinMode(BUZZ,OUTPUT);
-  myDFPlayer.begin(Serial);  // DFPlayer RX → TX ESP8266
+  FPSerial.begin(9600);
   EEPROM.begin(512);  // Inisialisasi EEPROM
+  pinMode(BUZZ,OUTPUT);
+  digitalWrite(BUZZ, HIGH);
+  
+ if (!myDFPlayer.begin(FPSerial, /*isACK = */true, /*doReset = */true)) {  //Use serial to communicate with mp3.
+    Serial.println(F("Unable to begin:"));
+    Serial.println(F("1.Please recheck the connection!"));
+    Serial.println(F("2.Please insert the SD card!"));
+    while(true);
+  }
+  Serial.println(F("DFPlayer Mini online."));
+  
+  myDFPlayer.setTimeOut(500); //Set serial communictaion time out 500ms
+  
+  
   strip.begin();
   Wire.begin();
   loadSettings();     // Load data ke variabel
   
   strip.setBrightness(brightness);
-  myDFPlayer.volume(volumeDfPlayer);     // Volume dari 0 - 30
+//  myDFPlayer.volume(volumeDfPlayer);     // Volume dari 0 - 30
   settings.modeOnline?ONLINE() : AP_init();
   Serial.println();
   Serial.println("READY");
@@ -504,9 +515,10 @@ void checkClientConnected() {
     if (clientCount != lastClientCount) {
       
       clientCount==1?modeSetting = 1 : modeSetting = 0;
-      Serial.println("clientCount: " + String(clientCount));
+      //Serial.println("clientCount: " + String(clientCount));
       strip.clear();
       strip.show();
+      digitalWrite(BUZZ, HIGH);
       lastClientCount = clientCount;
     }
     
@@ -531,7 +543,7 @@ void checkHourlyChime() {
   if (now.minute() == 0 && now.second() == 0 && now.hour() != lastHourlyPlay) {
     uint8_t jam = now.hour() % 12;
     if (jam == 0) jam = 12;  // Ubah 0 jadi 12
-    Serial.println("update jam: " + String(jam));
+    //Serial.println("update jam: " + String(jam));
     myDFPlayer.playFolder(1,jam);   // Misalnya track 1-12 adalah suara jam
    // isPlaying = true;
     lastHourlyPlay = now.hour();  // Simpan jam terakhir dimainkan
@@ -543,12 +555,12 @@ void checkAlarm() {
     if (now.hour() == alarm1Hour && now.minute() == alarm1Minute && now.second() == 0) {
       myDFPlayer.playFolder(2,alarm1Sound);
      // isPlaying = true;
-      Serial.println("ALARM 1 RUN");
+     // Serial.println("ALARM 1 RUN");
     }
     if (now.hour() == alarm2Hour && now.minute() == alarm2Minute && now.second() == 0) {
       myDFPlayer.playFolder(2,alarm2Sound);
      // isPlaying = true;
-      Serial.println("ALARM 2 RUN");
+      //Serial.println("ALARM 2 RUN");
     }
  // }
 }
@@ -704,7 +716,7 @@ void buzzerWarning(int cek){
       digitalWrite(BUZZ, state);
       //Serial.println("active");
       if(con <= 60) { con++; }
-      if(con == 61) { cek = 0; con = 0; state = false; stateBuzzWar = 0; config.adzan = 0;}
+      if(con == 61) { cek = 0; con = 0; state = true; stateBuzzWar = 0; config.adzan = 0;}
       //Serial.println("con:" + String(con));
     } 
     
