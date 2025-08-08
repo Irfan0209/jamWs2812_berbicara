@@ -80,15 +80,10 @@ uint8_t dotsOn = 0;
 bool modeSetting = false;
 //bool modeSwitchTemp = true;
 
-// MANUAL COLOR
-//uint8_t manualR = 255, manualG = 0, manualB = 0;
-
-// ALARM
-//uint8_t alarm1Hour = 6, alarm1Minute = 0, alarm1Sound = 1;
-//uint8_t alarm2Hour = 12, alarm2Minute = 0, alarm2Sound = 2;
-
-//uint8_t brightness = 20;
-//uint8_t volumeDfPlayer;
+// Untuk kontrol urutan suara startup
+byte startupStage = 0;
+unsigned long lastVoiceMillis = 0;
+bool startupSelesai = false;
 
 // DFPlayer
 bool isPlaying = false;
@@ -420,38 +415,61 @@ void loadSettings() {
   Serial.println("[EEPROM] alarm2Sound       : " + String(settings.alarm2Sound));
   Serial.println(F("[EEPROM] ========================\n"));
 }
-
-
 void setup() {
   Serial.begin(115200);
   FPSerial.begin(9600);
   EEPROM.begin(64); // atau sesuai kebutuhan
-  pinMode(BUZZ,OUTPUT);
+
+  pinMode(BUZZ, OUTPUT);
   digitalWrite(BUZZ, HIGH);
-  
- if (!myDFPlayer.begin(FPSerial, /*isACK = */true, /*doReset = */true)) {  //Use serial to communicate with mp3.
-    Serial.println(F("Unable to begin:"));
-    Serial.println(F("1.Please recheck the connection!"));
-    Serial.println(F("2.Please insert the SD card!"));
-    while(true);
+
+  if (!myDFPlayer.begin(FPSerial, true, true)) {
+    Serial.println(F("Unable to begin DFPlayer."));
+    while (true);
   }
   Serial.println(F("DFPlayer Mini online."));
-  
-  myDFPlayer.setTimeOut(500); //Set serial communictaion time out 500ms
-  
-  
+  myDFPlayer.setTimeOut(500);
+
+  // === SYSTEM STARTUP SOUND SEQUENCE ===
+  myDFPlayer.volume(30);  // volume awal sementara, nanti diganti dari EEPROM
+  delay(500);
+  myDFPlayer.playFolder(3, 1); // 001_menyiapkan system.wav
+  delay(5000); // sesuaikan dengan durasi file
+  myDFPlayer.playFolder(3, 2); // 002_penyiapan selesai.wav
+  delay(5000);
+
+  // === LOAD SETTINGS ===
   loadSettings();
   strip.begin();
   Wire.begin();
+  strip.setBrightness(settings.kecerahan);
   
-//  strip.setBrightness(brightness);
-//  myDFPlayer.volume(volumeDfPlayer);     // Volume dari 0 - 30
-  settings.modeOnline?ONLINE() : AP_init();
+
+  // === MODE CONNECTION ===
+  if (settings.modeOnline) {
+    myDFPlayer.playFolder(3, 5); // 003_menghubungkan wifi.wav
+    delay(2500);
+    ONLINE();
+    delay(500);
+    myDFPlayer.playFolder(3, 4); // 004_wifi connect.wav
+  } else {
+    myDFPlayer.playFolder(3, 7); // 006_mulai mode AP.wav
+    delay(4000);
+    AP_init();
+  }
+
+  delay(2000);
+  myDFPlayer.playFolder(3, 3); // 007_jam menyala.wav
+  delay(2000);
+  myDFPlayer.volume(settings.volumeDfplayer);
+  
   Serial.println();
   Serial.println("READY");
 }
 
 void loop() {
+  // --- kode loop utama programmu mulai jalan di sini ---
+
   if (settings.modeOnline) {
     ArduinoOTA.handle();  // OTA update jika mode online
     buzzerUpload(1000);
