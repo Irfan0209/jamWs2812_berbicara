@@ -11,7 +11,7 @@
 #include <SPI.h>
 #include <Wire.h>
 
-#include <EEPROM.h>
+#include <ESP_EEPROM.h>
 
 #include <ESP8266WebServer.h>
 
@@ -26,6 +26,21 @@
 #define LEDS_PER_DOT 4
 #define LEDS_PER_DIGIT  LEDS_PER_SEG *7
 #define LED   148
+
+#define ADDR_MODE_ONLINE      0
+#define ADDR_KECERAHAN        1
+#define ADDR_VOLUME           2
+#define ADDR_MODE_WARNA       3
+#define ADDR_MANUAL_R         4
+#define ADDR_MANUAL_G         5
+#define ADDR_MANUAL_B         6
+#define ADDR_MODE_SWITCH      7
+#define ADDR_ALARM1_HOUR      8
+#define ADDR_ALARM1_MINUTE    9
+#define ADDR_ALARM1_SOUND     10
+#define ADDR_ALARM2_HOUR      11
+#define ADDR_ALARM2_MINUTE    12
+#define ADDR_ALARM2_SOUND     13
 
 char ssid[20]     = "JAM_WS2812";
 char password[20] = "00000000";
@@ -52,10 +67,6 @@ uint8_t h1;
 uint8_t h2;
 uint8_t m1;
 uint8_t m2;
-//int JW;
-//int MW;
-//int JR;
-//int MR;
 
 uint8_t dot1[]={70,71,72,73};
 uint8_t dot2[]={74,75,76,77};
@@ -65,19 +76,19 @@ uint8_t pixelColor;
 uint8_t dotsOn = 0;
 
 // MODE
-bool modeWarnaOtomatis = true;
+//bool modeWarnaOtomatis = true;
 bool modeSetting = false;
-bool modeSwitchTemp = true;
+//bool modeSwitchTemp = true;
 
 // MANUAL COLOR
-uint8_t manualR = 255, manualG = 0, manualB = 0;
+//uint8_t manualR = 255, manualG = 0, manualB = 0;
 
 // ALARM
-uint8_t alarm1Hour = 6, alarm1Minute = 0, alarm1Sound = 1;
-uint8_t alarm2Hour = 12, alarm2Minute = 0, alarm2Sound = 2;
+//uint8_t alarm1Hour = 6, alarm1Minute = 0, alarm1Sound = 1;
+//uint8_t alarm2Hour = 12, alarm2Minute = 0, alarm2Sound = 2;
 
-uint8_t brightness = 20;
-uint8_t volumeDfPlayer;
+//uint8_t brightness = 20;
+//uint8_t volumeDfPlayer;
 
 // DFPlayer
 bool isPlaying = false;
@@ -98,12 +109,13 @@ struct PanelSettings {
   uint8_t manualR, manualG, manualB;
   uint8_t alarm1Hour, alarm1Minute, alarm1Sound;
   uint8_t alarm2Hour, alarm2Minute, alarm2Sound;
-  byte kecerahan;
-  byte volumeDfplayer;
+  byte kecerahan=50;
+  byte volumeDfplayer=20;
   
 };
 
 PanelSettings settings;
+#define EEPROM_START 0
 
 //=========================//
 //==variabel alarm adzan===//
@@ -156,168 +168,164 @@ long numberss[] = {
 };
 
 void handleSetTime() {
-  //if (!server.hasArg("plain")) return server.send(400, "text/plain", "Bad Request");
-
   if (server.hasArg("PLAY")) {
     uint8_t track = server.arg("PLAY").toInt();
     Serial.println("[PLAY] Track: " + String(track));
     myDFPlayer.playFolder(2, track);
     isPlaying = true;
+    return;
+  }
 
-  } else if (server.hasArg("STOP")) {
+  if (server.hasArg("STOP")) {
     Serial.println("[STOP] DFPlayer stop");
     stopDFPlayer();
+    return;
+  }
 
-  } else if (server.hasArg("MODE")) {
-    uint8_t data = server.arg("MODE").toInt();
-    settings.modeOnline = data;
-     Serial.println("[MODE ONLINE] Set to: " + String(data));
-    saveSettings();
+  if (server.hasArg("MODE")) {
+    byte mode = server.arg("MODE").toInt();
+    settings.modeOnline = mode;
+    saveByteToEEPROM(ADDR_MODE_ONLINE, mode);
+    Serial.println("[MODE ONLINE] Set to: " + String(mode));
     delay(1000);
     ESP.restart();
-    
-  } else if (server.hasArg("BRIGHTNESS")) {
-    brightness = server.arg("BRIGHTNESS").toInt();
-    byte data = map(brightness, 0, 100, 1, 255);
-    strip.setBrightness(data);
-    Serial.println("[BRIGHTNESS] Set to: " + String(data));
-    settings.kecerahan = data;
-    saveSettings();
-
-  } else if (server.hasArg("VOLUME")) {
-    volumeDfPlayer = server.arg("VOLUME").toInt();
-    byte data = map(volumeDfPlayer, 0, 100, 0, 29);
-    myDFPlayer.volume(data);
-    Serial.println("[VOLUME] Set to: " + String(data));
-    settings.volumeDfplayer = data;
-    saveSettings();
-
-  } else if (server.hasArg("SET_TIME")) {
-  String timeStr = server.arg("SET_TIME");
-  Serial.println("[DEBUG] SET_TIME raw input: " + timeStr);
-
-  int tahun, bulan, tanggal, dow, jam, menit, detik;
-
-  // Parsing format: YYYY-MM-DD-DOW-HH:MM:SS
-  int idx1 = timeStr.indexOf('-');
-  int idx2 = timeStr.indexOf('-', idx1 + 1);
-  int idx3 = timeStr.indexOf('-', idx2 + 1);
-  int idx4 = timeStr.indexOf('-', idx3 + 1);
-  int idx5 = timeStr.indexOf(':', idx4 + 1);
-  int idx6 = timeStr.indexOf(':', idx5 + 1);
-
-  if (idx1 > 0 && idx2 > idx1 && idx3 > idx2 && idx4 > idx3 && idx5 > idx4 && idx6 > idx5) {
-    tahun   = timeStr.substring(0, idx1).toInt();
-    bulan   = timeStr.substring(idx1 + 1, idx2).toInt();
-    tanggal = timeStr.substring(idx2 + 1, idx3).toInt();
-    dow     = timeStr.substring(idx3 + 1, idx4).toInt();
-    jam     = timeStr.substring(idx4 + 1, idx5).toInt();
-    menit   = timeStr.substring(idx5 + 1, idx6).toInt();
-    detik   = timeStr.substring(idx6 + 1).toInt();
-
-    // Set RTC atau waktu sistem Anda
-    // Set ke waktu RTC/objek Time Anda
-    Time.setYear(tahun);
-    Time.setMonth(bulan);
-    Time.setDate(tanggal);
-    Time.setDoW(dow);
-    Time.setHour(jam);
-    Time.setMinute(menit);
-    Time.setSecond(detik);
-
-    // Tampilkan ke Serial Monitor
-//    Serial.println("[SET_TIME] Waktu disetel:");
-//    Serial.println("  Tanggal : " + String(tanggal) + "-" + String(bulan) + "-" + String(tahun));
-//    Serial.println("  Hari (DoW): " + String(dow));
-//    Serial.println("  Jam     : " + String(jam) + ":" + String(menit) + ":" + String(detik));
-  } else {
-    //Serial.println("[SET_TIME] Format salah! Gunakan: YYYY-MM-DD-DOW-HH:MM:SS");
   }
-}
 
- else if (server.hasArg("COLOR")) {
-  String colorStr = server.arg("COLOR");
-  //Serial.println("[DEBUG] COLOR raw input: " + colorStr);
-
-  // Parsing dengan format: COLOR=R,G,B
-  int r = 0, g = 0, b = 0;
-  int idx1 = colorStr.indexOf(',');
-  int idx2 = colorStr.indexOf(',', idx1 + 1);
-
-  if (idx1 > 0 && idx2 > idx1) {
-    r = colorStr.substring(0, idx1).toInt();
-    g = colorStr.substring(idx1 + 1, idx2).toInt();
-    b = colorStr.substring(idx2 + 1).toInt();
-
-    manualR = r;
-    manualG = g;
-    manualB = b;
-    modeWarnaOtomatis = false;
-
-    Serial.println("[COLOR] R: " + String(r) + " G: " + String(g) + " B: " + String(b));
-
-    settings.modeWarnaOtomatis = modeWarnaOtomatis;
-    settings.manualR = r;
-    settings.manualG = g;
-    settings.manualB = b;
-    saveSettings();
-  } else {
-    Serial.println("[COLOR] Invalid format! Use R,G,B");
+  if (server.hasArg("BRIGHTNESS")) {
+    int brightnessInput = server.arg("BRIGHTNESS").toInt();
+    byte mapped = map(brightnessInput, 0, 100, 1, 255);
+    settings.kecerahan = mapped;
+    strip.setBrightness(mapped);
+    saveByteToEEPROM(ADDR_KECERAHAN, mapped);
+    Serial.println("[BRIGHTNESS] Set to: " + String(mapped));
   }
-}
- else if (server.hasArg("AUTO_COLOR")) {
-    modeWarnaOtomatis = true;
+
+  if (server.hasArg("VOLUME")) {
+    int volInput = server.arg("VOLUME").toInt();
+    byte mapped = map(volInput, 0, 100, 0, 29);
+    settings.volumeDfplayer = mapped;
+    myDFPlayer.volume(mapped);
+    saveByteToEEPROM(ADDR_VOLUME, mapped);
+    Serial.println("[VOLUME] Set to: " + String(mapped));
+  }
+
+  if (server.hasArg("COLOR")) {
+    String colorStr = server.arg("COLOR");
+    int idx1 = colorStr.indexOf(',');
+    int idx2 = colorStr.indexOf(',', idx1 + 1);
+    if (idx1 > 0 && idx2 > idx1) {
+      byte r = colorStr.substring(0, idx1).toInt();
+      byte g = colorStr.substring(idx1 + 1, idx2).toInt();
+      byte b = colorStr.substring(idx2 + 1).toInt();
+
+      settings.manualR = r;
+      settings.manualG = g;
+      settings.manualB = b;
+      settings.modeWarnaOtomatis = false;
+
+      saveByteToEEPROM(ADDR_MANUAL_R, r);
+      saveByteToEEPROM(ADDR_MANUAL_G, g);
+      saveByteToEEPROM(ADDR_MANUAL_B, b);
+      saveByteToEEPROM(ADDR_MODE_WARNA, 0); // 0 = manual
+
+      Serial.printf("[COLOR] R:%d G:%d B:%d\n", r, g, b);
+    } else {
+      Serial.println("[COLOR] Format salah. Gunakan R,G,B");
+    }
+  }
+
+  if (server.hasArg("AUTO_COLOR")) {
+    settings.modeWarnaOtomatis = true;
+    saveByteToEEPROM(ADDR_MODE_WARNA, 1); // 1 = otomatis
     Serial.println("[AUTO_COLOR] Enabled");
-    settings.modeWarnaOtomatis = modeWarnaOtomatis;
-    saveSettings();
-
-  } else if (server.hasArg("MODE_SWITCH")) {
-    modeSwitchTemp = server.arg("MODE_SWITCH").toInt();
-    Serial.println("[MODE_SWITCH] Mode: " + String(modeSwitchTemp));
-    settings.modeSwitchTempp = modeSwitchTemp;
-    saveSettings();
-
-  } else if (server.hasArg("ALARM1")) {
-  String data = server.arg("ALARM1");
-  int colon1 = data.indexOf(':');
-  int colon2 = data.indexOf(':', colon1 + 1);
-
-  if (colon1 != -1 && colon2 != -1) {
-    alarm1Hour = data.substring(0, colon1).toInt();
-    alarm1Minute = data.substring(colon1 + 1, colon2).toInt();
-    alarm1Sound = data.substring(colon2 + 1).toInt();
-
-    Serial.println("[ALARM1] " + String(alarm1Hour) + ":" + String(alarm1Minute) + " Sound: " + String(alarm1Sound));
-
-    settings.alarm1Hour = alarm1Hour;
-    settings.alarm1Minute = alarm1Minute;
-    settings.alarm1Sound = alarm1Sound;
-    saveSettings();
-  } else {
-    Serial.println("[ALARM1] Format salah. Gunakan ALARM1=HH:MM:SOUND");
   }
 
-} else if (server.hasArg("ALARM2")) {
-  String data = server.arg("ALARM2");
-  int colon1 = data.indexOf(':');
-  int colon2 = data.indexOf(':', colon1 + 1);
-
-  if (colon1 != -1 && colon2 != -1) {
-    alarm2Hour = data.substring(0, colon1).toInt();
-    alarm2Minute = data.substring(colon1 + 1, colon2).toInt();
-    alarm2Sound = data.substring(colon2 + 1).toInt();
-
-    Serial.println("[ALARM2] " + String(alarm2Hour) + ":" + String(alarm2Minute) + " Sound: " + String(alarm2Sound));
-
-    settings.alarm2Hour = alarm2Hour;
-    settings.alarm2Minute = alarm2Minute;
-    settings.alarm2Sound = alarm2Sound;
-    saveSettings();
-  } else {
-    Serial.println("[ALARM2] Format salah. Gunakan ALARM2=HH:MM:SOUND");
+  if (server.hasArg("MODE_SWITCH")) {
+    byte mode = server.arg("MODE_SWITCH").toInt();
+    settings.modeSwitchTempp = mode;
+    saveByteToEEPROM(ADDR_MODE_SWITCH, mode);
+    Serial.println("[MODE_SWITCH] Mode: " + String(mode));
   }
-}
 
+  if (server.hasArg("ALARM1")) {
+    String data = server.arg("ALARM1");
+    int colon1 = data.indexOf(':');
+    int colon2 = data.indexOf(':', colon1 + 1);
+    if (colon1 != -1 && colon2 != -1) {
+      byte h = data.substring(0, colon1).toInt();
+      byte m = data.substring(colon1 + 1, colon2).toInt();
+      byte s = data.substring(colon2 + 1).toInt();
+
+      settings.alarm1Hour = h;
+      settings.alarm1Minute = m;
+      settings.alarm1Sound = s;
+
+      saveByteToEEPROM(ADDR_ALARM1_HOUR, h);
+      saveByteToEEPROM(ADDR_ALARM1_MINUTE, m);
+      saveByteToEEPROM(ADDR_ALARM1_SOUND, s);
+
+      Serial.printf("[ALARM1] %02d:%02d Sound:%d\n", h, m, s);
+    } else {
+      Serial.println("[ALARM1] Format salah. Gunakan HH:MM:SOUND");
+    }
+  }
+
+  if (server.hasArg("ALARM2")) {
+    String data = server.arg("ALARM2");
+    int colon1 = data.indexOf(':');
+    int colon2 = data.indexOf(':', colon1 + 1);
+    if (colon1 != -1 && colon2 != -1) {
+      byte h = data.substring(0, colon1).toInt();
+      byte m = data.substring(colon1 + 1, colon2).toInt();
+      byte s = data.substring(colon2 + 1).toInt();
+
+      settings.alarm2Hour = h;
+      settings.alarm2Minute = m;
+      settings.alarm2Sound = s;
+
+      saveByteToEEPROM(ADDR_ALARM2_HOUR, h);
+      saveByteToEEPROM(ADDR_ALARM2_MINUTE, m);
+      saveByteToEEPROM(ADDR_ALARM2_SOUND, s);
+
+      Serial.printf("[ALARM2] %02d:%02d Sound:%d\n", h, m, s);
+    } else {
+      Serial.println("[ALARM2] Format salah. Gunakan HH:MM:SOUND");
+    }
+  }
+
+  if (server.hasArg("SET_TIME")) {
+    String timeStr = server.arg("SET_TIME");
+    int tahun, bulan, tanggal, dow, jam, menit, detik;
+
+    int idx1 = timeStr.indexOf('-');
+    int idx2 = timeStr.indexOf('-', idx1 + 1);
+    int idx3 = timeStr.indexOf('-', idx2 + 1);
+    int idx4 = timeStr.indexOf('-', idx3 + 1);
+    int idx5 = timeStr.indexOf(':', idx4 + 1);
+    int idx6 = timeStr.indexOf(':', idx5 + 1);
+
+    if (idx6 != -1) {
+      tahun   = timeStr.substring(0, idx1).toInt();
+      bulan   = timeStr.substring(idx1 + 1, idx2).toInt();
+      tanggal = timeStr.substring(idx2 + 1, idx3).toInt();
+      dow     = timeStr.substring(idx3 + 1, idx4).toInt();
+      jam     = timeStr.substring(idx4 + 1, idx5).toInt();
+      menit   = timeStr.substring(idx5 + 1, idx6).toInt();
+      detik   = timeStr.substring(idx6 + 1).toInt();
+
+      Time.setYear(tahun);
+      Time.setMonth(bulan);
+      Time.setDate(tanggal);
+      Time.setDoW(dow);
+      Time.setHour(jam);
+      Time.setMinute(menit);
+      Time.setSecond(detik);
+
+      Serial.println("[SET_TIME] OK");
+    } else {
+      Serial.println("[SET_TIME] Format salah!");
+    }
+  }
 
   server.send(200, "text/plain", "OK");
 }
@@ -364,8 +372,8 @@ void ONLINE() {
  
   ArduinoOTA.onEnd([]() {
     Serial.println("restart");
-    settings.modeOnline = 0;
-    saveSettings();
+   settings.modeOnline = 0;
+    saveByteToEEPROM(ADDR_MODE_ONLINE, 0);
     delay(1000);
     ESP.restart();
   });
@@ -374,53 +382,50 @@ void ONLINE() {
   //Serial.println("OTA Ready");
 }
 
-void saveSettings() {
-  EEPROM.put(0, settings);
+void saveByteToEEPROM(int address, byte value) {
+  EEPROM.write(address, value);
   EEPROM.commit();
 }
 
 void loadSettings() {
-  EEPROM.get(0, settings); // Load struct dari EEPROM address 0
+  settings.modeOnline        = EEPROM.read(ADDR_MODE_ONLINE);
+  settings.kecerahan         = EEPROM.read(ADDR_KECERAHAN);
+  settings.volumeDfplayer    = EEPROM.read(ADDR_VOLUME);
+  settings.modeWarnaOtomatis = EEPROM.read(ADDR_MODE_WARNA);
+  settings.manualR           = EEPROM.read(ADDR_MANUAL_R);
+  settings.manualG           = EEPROM.read(ADDR_MANUAL_G);
+  settings.manualB           = EEPROM.read(ADDR_MANUAL_B);
+  settings.modeSwitchTempp   = EEPROM.read(ADDR_MODE_SWITCH);
+  settings.alarm1Hour        = EEPROM.read(ADDR_ALARM1_HOUR);
+  settings.alarm1Minute      = EEPROM.read(ADDR_ALARM1_MINUTE);
+  settings.alarm1Sound       = EEPROM.read(ADDR_ALARM1_SOUND);
+  settings.alarm2Hour        = EEPROM.read(ADDR_ALARM2_HOUR);
+  settings.alarm2Minute      = EEPROM.read(ADDR_ALARM2_MINUTE);
+  settings.alarm2Sound       = EEPROM.read(ADDR_ALARM2_SOUND);
 
-  // Simpan ke variabel global
-  modeWarnaOtomatis = settings.modeWarnaOtomatis;
-  manualR = settings.manualR;
-  manualG = settings.manualG;
-  manualB = settings.manualB;
-  alarm1Hour = settings.alarm1Hour;
-  alarm1Minute = settings.alarm1Minute;
-  alarm1Sound = settings.alarm1Sound;
-  alarm2Hour = settings.alarm2Hour;
-  alarm2Minute = settings.alarm2Minute;
-  alarm2Sound = settings.alarm2Sound;
-  brightness = settings.kecerahan;
-  volumeDfPlayer = settings.volumeDfplayer;
-  modeSwitchTemp = settings.modeSwitchTempp;
-
-  // Tampilkan semua nilai ke Serial Monitor
-//  Serial.println(F("=== Data dari EEPROM ==="));
-//  Serial.println("modeOnline        : " + String(settings.modeOnline));
-//  Serial.println("modeSetting       : " + String(settings.modeSetting));
-//  Serial.println("modeWarnaOtomatis : " + String(settings.modeWarnaOtomatis));
-//  Serial.println("manualR           : " + String(settings.manualR));
-//  Serial.println("manualG           : " + String(settings.manualG));
-//  Serial.println("manualB           : " + String(settings.manualB));
-//  Serial.println("alarm1Hour        : " + String(settings.alarm1Hour));
-//  Serial.println("alarm1Minute      : " + String(settings.alarm1Minute));
-//  Serial.println("alarm1Sound       : " + String(settings.alarm1Sound));
-//  Serial.println("alarm2Hour        : " + String(settings.alarm2Hour));
-//  Serial.println("alarm2Minute      : " + String(settings.alarm2Minute));
-//  Serial.println("alarm2Sound       : " + String(settings.alarm2Sound));
-//  Serial.println("kecerahan         : " + String(settings.kecerahan));
-//  Serial.println("volumeDfplayer    : " + String(settings.volumeDfplayer));
-//  Serial.println("modeSwitchTemp    : " + String(settings.modeSwitchTempp));
-//  Serial.println(F("========================\n"));
+  Serial.println(F("\n[EEPROM] === SETTINGS LOADED ==="));
+  Serial.println("[EEPROM] modeOnline        : " + String(settings.modeOnline));
+  Serial.println("[EEPROM] kecerahan         : " + String(settings.kecerahan));
+  Serial.println("[EEPROM] volumeDfplayer    : " + String(settings.volumeDfplayer));
+  Serial.println("[EEPROM] modeWarnaOtomatis : " + String(settings.modeWarnaOtomatis));
+  Serial.println("[EEPROM] manualR           : " + String(settings.manualR));
+  Serial.println("[EEPROM] manualG           : " + String(settings.manualG));
+  Serial.println("[EEPROM] manualB           : " + String(settings.manualB));
+  Serial.println("[EEPROM] modeSwitchTempp   : " + String(settings.modeSwitchTempp));
+  Serial.println("[EEPROM] alarm1Hour        : " + String(settings.alarm1Hour));
+  Serial.println("[EEPROM] alarm1Minute      : " + String(settings.alarm1Minute));
+  Serial.println("[EEPROM] alarm1Sound       : " + String(settings.alarm1Sound));
+  Serial.println("[EEPROM] alarm2Hour        : " + String(settings.alarm2Hour));
+  Serial.println("[EEPROM] alarm2Minute      : " + String(settings.alarm2Minute));
+  Serial.println("[EEPROM] alarm2Sound       : " + String(settings.alarm2Sound));
+  Serial.println(F("[EEPROM] ========================\n"));
 }
+
 
 void setup() {
   Serial.begin(115200);
   FPSerial.begin(9600);
-  EEPROM.begin(512);  // Inisialisasi EEPROM
+  EEPROM.begin(64); // atau sesuai kebutuhan
   pinMode(BUZZ,OUTPUT);
   digitalWrite(BUZZ, HIGH);
   
@@ -435,11 +440,11 @@ void setup() {
   myDFPlayer.setTimeOut(500); //Set serial communictaion time out 500ms
   
   
+  loadSettings();
   strip.begin();
   Wire.begin();
-  loadSettings();     // Load data ke variabel
   
-  strip.setBrightness(brightness);
+//  strip.setBrightness(brightness);
 //  myDFPlayer.volume(volumeDfPlayer);     // Volume dari 0 - 30
   settings.modeOnline?ONLINE() : AP_init();
   Serial.println();
@@ -469,13 +474,13 @@ void loop() {
   check();          // Cek parameter lainnya
   buzzerWarning(stateBuzzWar);
 
-  static uint32_t lastToggle = 0;
+  static unsigned long lastToggle = 0;
   static bool toggleState = false;
-  uint32_t now = millis();
-
-  if (modeSwitchTemp) {
+  unsigned long now = millis();
+  //Serial.println(modeSwitchTemp);
+  if (settings.modeSwitchTempp) {
     // Tampilkan jam dan suhu bergantian setiap 10 detik
-    if (now - lastToggle > 10000) {
+    if (now - lastToggle > 15000) {
       toggleState = !toggleState;
       lastToggle = now;
     }
@@ -552,13 +557,13 @@ void checkHourlyChime() {
 
 void checkAlarm() {
   //if (!isPlaying) {
-    if (now.hour() == alarm1Hour && now.minute() == alarm1Minute && now.second() == 0) {
-      myDFPlayer.playFolder(2,alarm1Sound);
+    if (now.hour() == settings.alarm1Hour && now.minute() == settings.alarm1Minute && now.second() == 0) {
+      myDFPlayer.playFolder(2,settings.alarm1Sound);
      // isPlaying = true;
      // Serial.println("ALARM 1 RUN");
     }
-    if (now.hour() == alarm2Hour && now.minute() == alarm2Minute && now.second() == 0) {
-      myDFPlayer.playFolder(2,alarm2Sound);
+    if (now.hour() == settings.alarm2Hour && now.minute() == settings.alarm2Minute && now.second() == 0) {
+      myDFPlayer.playFolder(2,settings.alarm2Sound);
      // isPlaying = true;
       //Serial.println("ALARM 2 RUN");
     }
@@ -571,10 +576,10 @@ void stopDFPlayer() {
 }
 
 uint32_t getCurrentColor() {
-  if (modeWarnaOtomatis) {
+  if (settings.modeWarnaOtomatis) {
     return Wheel((hue + pixelColor) & 255);
   } else {
-    return strip.Color(manualR, manualG, manualB);
+    return strip.Color(settings.manualR, settings.manualG, settings.manualB);
   }
 }
 
@@ -591,35 +596,6 @@ void DisplayNumber(byte number, byte segment, uint32_t color) {
   }
   strip.show();
 }
-
-
-/*
-void DisplayNumber(byte number, byte segment, uint32_t color) {
-  // segment from left to right: 3, 2, 1, 0
-  byte startindex = 0;
-  switch (segment) {
-    case 0:
-      startindex = 0;
-      break;
-    case 1:
-      startindex = LEDS_PER_DIGIT;
-      break;
-    case 2:
-      startindex = LEDS_PER_DIGIT * 2 + LEDS_PER_DOT * 2;
-      break;
-    case 3:
-      startindex = LEDS_PER_DIGIT * 3 + LEDS_PER_DOT * 2;
-      break;
-  }
-
-  for (byte i = 0; i < 7; i++) {           // 7 segments
-    for (byte j = 0; j < LEDS_PER_SEG; j++) {         // LEDs per segment
-      strip.setPixelColor(i * LEDS_PER_SEG + j + startindex , (numberss[number] & 1 << i) == 1 << i ? color : strip.Color(0, 0, 0));
-      strip.show();
-    }
-  }
-}
-*/
 
 void getClockRTC() 
 {
@@ -721,19 +697,3 @@ void buzzerWarning(int cek){
     } 
     
 }
-
-/*
-void Buzzer(uint8_t state)
-  {
-    if(!stateBuzzer) return;
-    
-    switch(state){
-      case 0 :
-        digitalWrite(BUZZ,HIGH);
-      break;
-      case 1 :
-        digitalWrite(BUZZ,LOW);
-      break;
-    };
-  }
-*/
