@@ -63,17 +63,17 @@ ESP8266WebServer server(80);
 SoftwareSerial softSerial(D3, D4); // RX, TX
 #define FPSerial softSerial
 
-uint8_t h1;
-uint8_t h2;
-uint8_t m1;
-uint8_t m2;
+byte h1;
+byte h2;
+byte m1;
+byte m2;
 
-uint8_t dot1[]={70,71,72,73};
-uint8_t dot2[]={74,75,76,77};
+byte dot1[]={70,71,72,73};
+byte dot2[]={74,75,76,77};
 
-uint8_t hue;
-uint8_t pixelColor;
-uint8_t dotsOn = 0;
+uint16_t hue;
+uint16_t pixelColor;
+byte dotsOn = 0;
 
 // MODE
 //bool modeWarnaOtomatis = true;
@@ -88,7 +88,7 @@ bool startupSelesai = false;
 // DFPlayer
 bool isPlaying = false;
 
-uint8_t lastHourlyPlay = 255;  // Nilai tidak valid awalnya
+uint8_t lastHourlyPlay = 0;  // Nilai tidak valid awalnya
 
 bool stateBuzzWar = false;
 
@@ -461,7 +461,7 @@ void setup() {
   delay(2000);
   myDFPlayer.playFolder(3, 3); // 007_jam menyala.wav
   delay(2000);
-  myDFPlayer.volume(settings.volumeDfplayer);
+  //myDFPlayer.volume(settings.volumeDfplayer);
   
   Serial.println();
   Serial.println("READY");
@@ -486,10 +486,10 @@ void loop() {
   }
 
   // Mode normal (offline + tidak setting)
-  getClockRTC();    // Ambil waktu dari RTC
+  
   timerHue();       // Update warna
-  islam();          // Fungsi terkait waktu sholat
-  check();          // Cek parameter lainnya
+  //islam();          // Fungsi terkait waktu sholat
+  //check();          // Cek parameter lainnya
   buzzerWarning(stateBuzzWar);
 
   static unsigned long lastToggle = 0;
@@ -549,6 +549,7 @@ void checkClientConnected() {
 }
 
 void showClock(uint32_t color) {
+  getClockRTC();    // Ambil waktu dari RTC
   DisplayNumber(h1, 3, color);
   DisplayNumber(h2, 2, color);
   DisplayNumber(m1, 1, color);
@@ -563,6 +564,7 @@ void showTemp(){
 }
 
 void checkHourlyChime() {
+  now = RTC.now();
   if (now.minute() == 0 && now.second() == 0 && now.hour() != lastHourlyPlay) {
     uint8_t jam = now.hour() % 12;
     if (jam == 0) jam = 12;  // Ubah 0 jadi 12
@@ -574,6 +576,7 @@ void checkHourlyChime() {
 }
 
 void checkAlarm() {
+    now = RTC.now();
   //if (!isPlaying) {
     if (now.hour() == settings.alarm1Hour && now.minute() == settings.alarm1Minute && now.second() == 0) {
       myDFPlayer.playFolder(2,settings.alarm1Sound);
@@ -634,6 +637,7 @@ void getClockNTP()
 }
 
 int getTempp(){
+  now = RTC.now();
   return Time.getTemperature();
 }
 
