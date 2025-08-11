@@ -162,18 +162,23 @@ long numberss[] = {
   //0b1111000   // [27] '
 };
 
+
 void handleSetTime() {
   if (server.hasArg("PLAY")) {
     uint8_t track = server.arg("PLAY").toInt();
-    Serial.println("[PLAY] Track: " + String(track));
+    //Serial.println("[PLAY] Track: " + String(track));
+    if(isPlaying) stopDFPlayer();
+    delay(100);
     myDFPlayer.playFolder(2, track);
     isPlaying = true;
+    server.send(200, "text/plain", "OK");
     return;
   }
 
   if (server.hasArg("STOP")) {
     Serial.println("[STOP] DFPlayer stop");
     stopDFPlayer();
+    server.send(200, "text/plain", "OK");
     return;
   }
 
@@ -181,7 +186,8 @@ void handleSetTime() {
     byte mode = server.arg("MODE").toInt();
     settings.modeOnline = mode;
     saveByteToEEPROM(ADDR_MODE_ONLINE, mode);
-    Serial.println("[MODE ONLINE] Set to: " + String(mode));
+    //Serial.println("[MODE ONLINE] Set to: " + String(mode));
+    server.send(200, "text/plain", "OK");
     delay(1000);
     ESP.restart();
   }
@@ -191,18 +197,23 @@ void handleSetTime() {
     byte mapped = map(brightnessInput, 0, 100, 1, 255);
     settings.kecerahan = mapped;
     strip.setBrightness(mapped);
+    delay(100);
     saveByteToEEPROM(ADDR_KECERAHAN, mapped);
-    Serial.println("[BRIGHTNESS] Set to: " + String(mapped));
+    //Serial.println("[BRIGHTNESS] Set to: " + String(mapped));
+    server.send(200, "text/plain", "OK");
   }
 
   if (server.hasArg("VOLUME")) {
     int volInput = server.arg("VOLUME").toInt();
     byte mapped = map(volInput, 0, 100, 0, 29);
-    settings.volumeDfplayer = mapped;
+    stopDFPlayer();
     myDFPlayer.volume(mapped);
+    delay(100);
     saveByteToEEPROM(ADDR_VOLUME, mapped);
-    Serial.println("[VOLUME] Set to: " + String(mapped));
+    //Serial.println("[VOLUME] Set to: " + String(volInput));
+    server.send(200, "text/plain", "OK");
   }
+ 
 
   if (server.hasArg("COLOR")) {
     String colorStr = server.arg("COLOR");
@@ -223,7 +234,8 @@ void handleSetTime() {
       saveByteToEEPROM(ADDR_MANUAL_B, b);
       saveByteToEEPROM(ADDR_MODE_WARNA, 0); // 0 = manual
 
-      Serial.printf("[COLOR] R:%d G:%d B:%d\n", r, g, b);
+      //Serial.printf("[COLOR] R:%d G:%d B:%d\n", r, g, b);
+      server.send(200, "text/plain", "OK");
     } else {
       Serial.println("[COLOR] Format salah. Gunakan R,G,B");
     }
@@ -232,14 +244,16 @@ void handleSetTime() {
   if (server.hasArg("AUTO_COLOR")) {
     settings.modeWarnaOtomatis = true;
     saveByteToEEPROM(ADDR_MODE_WARNA, 1); // 1 = otomatis
-    Serial.println("[AUTO_COLOR] Enabled");
+    //Serial.println("[AUTO_COLOR] Enabled");
+    server.send(200, "text/plain", "OK");
   }
 
   if (server.hasArg("MODE_SWITCH")) {
     byte mode = server.arg("MODE_SWITCH").toInt();
     settings.modeSwitchTempp = mode;
     saveByteToEEPROM(ADDR_MODE_SWITCH, mode);
-    Serial.println("[MODE_SWITCH] Mode: " + String(mode));
+    //Serial.println("[MODE_SWITCH] Mode: " + String(mode));
+    server.send(200, "text/plain", "OK");
   }
 
   if (server.hasArg("ALARM1")) {
@@ -259,7 +273,8 @@ void handleSetTime() {
       saveByteToEEPROM(ADDR_ALARM1_MINUTE, m);
       saveByteToEEPROM(ADDR_ALARM1_SOUND, s);
 
-      Serial.printf("[ALARM1] %02d:%02d Sound:%d\n", h, m, s);
+      //Serial.printf("[ALARM1] %02d:%02d Sound:%d\n", h, m, s);
+      server.send(200, "text/plain", "OK");
     } else {
       Serial.println("[ALARM1] Format salah. Gunakan HH:MM:SOUND");
     }
@@ -282,7 +297,8 @@ void handleSetTime() {
       saveByteToEEPROM(ADDR_ALARM2_MINUTE, m);
       saveByteToEEPROM(ADDR_ALARM2_SOUND, s);
 
-      Serial.printf("[ALARM2] %02d:%02d Sound:%d\n", h, m, s);
+      //Serial.printf("[ALARM2] %02d:%02d Sound:%d\n", h, m, s);
+      server.send(200, "text/plain", "OK");
     } else {
       Serial.println("[ALARM2] Format salah. Gunakan HH:MM:SOUND");
     }
@@ -316,13 +332,12 @@ void handleSetTime() {
       Time.setMinute(menit);
       Time.setSecond(detik);
 
-      Serial.println("[SET_TIME] OK");
+      //Serial.println("[SET_TIME] OK");
+      server.send(200, "text/plain", "OK");
     } else {
       Serial.println("[SET_TIME] Format salah!");
     }
   }
-
-  server.send(200, "text/plain", "OK");
 }
 
 void handleGetData() {
@@ -460,13 +475,77 @@ void setup() {
 
   delay(2000);
   myDFPlayer.playFolder(3, 3); // 007_jam menyala.wav
-  delay(2000);
-  //myDFPlayer.volume(settings.volumeDfplayer);
-  
+  delay(3000);
+  myDFPlayer.volume(settings.volumeDfplayer);
+  delay(1000);
   Serial.println();
   Serial.println("READY");
 }
 
+void loop() {
+  // --- Mode Online ---
+  if (settings.modeOnline) {
+    ArduinoOTA.handle();  // OTA update
+    buzzerUpload(1000);
+    return;
+  }
+
+  // --- Mode Offline + Setting ---
+  checkClientConnected();  
+  if (modeSetting) {
+    server.handleClient();
+    buzzerUpload(250);
+    return;
+  }
+
+  // --- Mode Normal ---
+  timerHue();
+  buzzerWarning(stateBuzzWar);
+
+  // Jika sedang memutar file DFPlayer
+  if (isPlaying) {
+    // Cek apakah DFPlayer sudah selesai memutar file
+    if (myDFPlayer.available()) {
+      uint8_t type = myDFPlayer.readType();
+      if (type == DFPlayerPlayFinished) {
+        isPlaying = false;
+        Serial.println("DFPlayer: Playback finished.");
+      }
+    }
+//    // Saat isPlaying true, kita bisa tetap tampilkan jam atau animasi tertentu
+//    showClock(getCurrentColor());
+//    showDots(0xFF0000);
+//    return; // Skip sisa proses normal
+  }
+
+  // --- Tampilan Normal (tidak sedang memutar audio) ---
+  static unsigned long lastToggle = 0;
+  static bool toggleState = false;
+  unsigned long now = millis();
+
+  if (settings.modeSwitchTempp) {
+    if (now - lastToggle > 15000) {
+      toggleState = !toggleState;
+      lastToggle = now;
+    }
+
+    if (toggleState) {
+      showClock(getCurrentColor());
+      showDots(0xFF0000);
+    } else {
+      showTemp();
+      showDots(0x000000);
+    }
+  } else {
+    showClock(getCurrentColor());
+    showDots(0xFF0000);
+  }
+
+  checkAlarm();
+  checkHourlyChime();
+}
+
+/*
 void loop() {
   // --- kode loop utama programmu mulai jalan di sini ---
 
@@ -486,7 +565,7 @@ void loop() {
   }
 
   // Mode normal (offline + tidak setting)
-  
+
   timerHue();       // Update warna
   //islam();          // Fungsi terkait waktu sholat
   //check();          // Cek parameter lainnya
@@ -495,7 +574,7 @@ void loop() {
   static unsigned long lastToggle = 0;
   static bool toggleState = false;
   unsigned long now = millis();
-  //Serial.println(modeSwitchTemp);
+ 
   if (settings.modeSwitchTempp) {
     // Tampilkan jam dan suhu bergantian setiap 10 detik
     if (now - lastToggle > 15000) {
@@ -520,7 +599,7 @@ void loop() {
   checkAlarm();
   checkHourlyChime();
   
-}
+}*/
 
 
 // =========================
@@ -565,30 +644,30 @@ void showTemp(){
 
 void checkHourlyChime() {
   now = RTC.now();
-  if (now.minute() == 0 && now.second() == 0 && now.hour() != lastHourlyPlay) {
+  if (now.minute() == 0 && now.second() == 0 && now.hour() != lastHourlyPlay && !isPlaying) {
     uint8_t jam = now.hour() % 12;
     if (jam == 0) jam = 12;  // Ubah 0 jadi 12
     //Serial.println("update jam: " + String(jam));
     myDFPlayer.playFolder(1,jam);   // Misalnya track 1-12 adalah suara jam
-   // isPlaying = true;
+    isPlaying = true;
     lastHourlyPlay = now.hour();  // Simpan jam terakhir dimainkan
   }
 }
 
 void checkAlarm() {
     now = RTC.now();
-  //if (!isPlaying) {
+  if (!isPlaying) {
     if (now.hour() == settings.alarm1Hour && now.minute() == settings.alarm1Minute && now.second() == 0) {
       myDFPlayer.playFolder(2,settings.alarm1Sound);
-     // isPlaying = true;
+      isPlaying = true;
      // Serial.println("ALARM 1 RUN");
     }
     if (now.hour() == settings.alarm2Hour && now.minute() == settings.alarm2Minute && now.second() == 0) {
       myDFPlayer.playFolder(2,settings.alarm2Sound);
-     // isPlaying = true;
+      isPlaying = true;
       //Serial.println("ALARM 2 RUN");
     }
- // }
+  }
 }
 
 void stopDFPlayer() {
@@ -654,7 +733,7 @@ void showDots(uint32_t color) {
 }
 
 void timerHue() {
-  const uint8_t delayHue = 8;
+  const uint8_t delayHue = 20;
   static uint32_t tmrsaveHue = 0;
   uint32_t tmr = millis();
 
