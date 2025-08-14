@@ -503,7 +503,7 @@ void loop() {
   buzzerWarning(stateBuzzWar);
 
   // Jika sedang memutar file DFPlayer
-  if (isPlaying) {
+  /*if (isPlaying) {
     // Cek apakah DFPlayer sudah selesai memutar file
     if (myDFPlayer.available()) {
       uint8_t type = myDFPlayer.readType();
@@ -516,7 +516,7 @@ void loop() {
 //    showClock(getCurrentColor());
 //    showDots(0xFF0000);
 //    return; // Skip sisa proses normal
-  }
+  }*/
 
   // --- Tampilan Normal (tidak sedang memutar audio) ---
   static unsigned long lastToggle = 0;
@@ -644,11 +644,12 @@ void showTemp(){
 
 void checkHourlyChime() {
   now = RTC.now();
-  if (now.minute() == 0 && now.second() == 0 && now.hour() != lastHourlyPlay && !isPlaying) {
+  if (now.minute() == 0 && now.second() == 0 && now.hour() != lastHourlyPlay ) {//&& !isPlaying
     uint8_t jam = now.hour() % 12;
-    if (jam == 0) jam = 12;  // Ubah 0 jadi 12
+    if (jam == 0) {jam = 12; } // Ubah 0 jadi 12
     //Serial.println("update jam: " + String(jam));
     myDFPlayer.playFolder(1,jam);   // Misalnya track 1-12 adalah suara jam
+    delay(50);
     isPlaying = true;
     lastHourlyPlay = now.hour();  // Simpan jam terakhir dimainkan
   }
@@ -656,18 +657,20 @@ void checkHourlyChime() {
 
 void checkAlarm() {
     now = RTC.now();
-  if (!isPlaying) {
+  //if (!isPlaying) {
     if (now.hour() == settings.alarm1Hour && now.minute() == settings.alarm1Minute && now.second() == 0) {
       myDFPlayer.playFolder(2,settings.alarm1Sound);
+      delay(50);
       isPlaying = true;
      // Serial.println("ALARM 1 RUN");
     }
     if (now.hour() == settings.alarm2Hour && now.minute() == settings.alarm2Minute && now.second() == 0) {
       myDFPlayer.playFolder(2,settings.alarm2Sound);
+      delay(50);
       isPlaying = true;
       //Serial.println("ALARM 2 RUN");
     }
-  }
+ // }
 }
 
 void stopDFPlayer() {
