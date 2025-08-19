@@ -42,6 +42,10 @@
 #define ADDR_ALARM2_MINUTE    12
 #define ADDR_ALARM2_SOUND     13
 
+// Tambahan untuk setengah jam
+#define ADDR_HALF_HOUR_BASE   14   // alamat awal untuk chime setengah jam
+#define HALF_HOUR_COUNT       24   // jumlah data (1 data = 1 jam, otomatis 2x main tiap jam)
+
 char ssid[20]     = "JAM_WS2812";
 char password[20] = "00000000";
 
@@ -88,7 +92,12 @@ bool startupSelesai = false;
 // DFPlayer
 bool isPlaying = false;
 
-uint8_t lastHourlyPlay = 0;  // Nilai tidak valid awalnya
+//uint8_t lastHourlyPlay = 255;  // Nilai tidak valid awalnya
+//uint8_t lastHalfHourlyPlay = 255
+
+// --- Variabel global ---
+int lastHourlyPlay = -1;
+int lastHalfPlay = -1;
 
 bool stateBuzzWar = false;
 
@@ -397,6 +406,21 @@ void saveByteToEEPROM(int address, byte value) {
   EEPROM.commit();
 }
 
+void saveHalfHourChime(uint8_t hour, uint8_t fileIndex) {
+  if (hour < 24) {
+    EEPROM.write(ADDR_HALF_HOUR_BASE + hour, fileIndex);
+    EEPROM.commit();
+  }
+}
+
+uint8_t loadHalfHourChime(uint8_t hour) {
+  if (hour < 24) {
+    return EEPROM.read(ADDR_HALF_HOUR_BASE + hour);
+  }
+  return 0;
+}
+
+
 void loadSettings() {
   settings.modeOnline        = EEPROM.read(ADDR_MODE_ONLINE);
   settings.kecerahan         = EEPROM.read(ADDR_KECERAHAN);
@@ -642,7 +666,33 @@ void showTemp(){
   DisplayNumber(12       ,0,strip.Color(255,0,0));
 }
 
+// --- Fungsi cek bunyi jam & setengah jam ---
 void checkHourlyChime() {
+  now = RTC.now();
+
+  // Bunyi jam tepat
+  if (now.minute() == 0 && now.second() == 0 && now.hour() != lastHourlyPlay) {
+    uint8_t jam = now.hour() % 12;
+    if (jam == 0) { jam = 12; }
+    myDFPlayer.playFolder(1, jam);  // Folder 1 = suara jam 1-12
+    delay(50);
+    isPlaying = true;
+    lastHourlyPlay = now.hour();
+  }
+
+  // Bunyi setengah jam
+  if (now.minute() == 30 && now.second() == 0 && now.hour() != lastHalfPlay) {
+    uint8_t fileIndex = loadHalfHourChime(now.hour()); // ambil setting user dari EEPROM
+    if (fileIndex > 0) {
+      myDFPlayer.playFolder(2, fileIndex);  // Misal folder 2 = koleksi bunyi setengah jam
+      delay(50);
+      isPlaying = true;
+    }
+    lastHalfPlay = now.hour();
+  }
+}
+
+/*void checkHourlyChime() {
   now = RTC.now();
   if (now.minute() == 0 && now.second() == 0 && now.hour() != lastHourlyPlay ) {//&& !isPlaying
     uint8_t jam = now.hour() % 12;
@@ -653,7 +703,7 @@ void checkHourlyChime() {
     isPlaying = true;
     lastHourlyPlay = now.hour();  // Simpan jam terakhir dimainkan
   }
-}
+}*/
 
 void checkAlarm() {
     now = RTC.now();
