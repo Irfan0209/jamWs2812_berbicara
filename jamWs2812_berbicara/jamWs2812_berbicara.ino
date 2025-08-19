@@ -92,8 +92,7 @@ bool startupSelesai = false;
 // DFPlayer
 bool isPlaying = false;
 
-//uint8_t lastHourlyPlay = 255;  // Nilai tidak valid awalnya
-//uint8_t lastHalfHourlyPlay = 255
+int currentVolume = -1;  // simpan volume terakhir yg dikirim ke DFPlayer
 
 // --- Variabel global ---
 int lastHourlyPlay = -1;
@@ -347,6 +346,26 @@ void handleSetTime() {
       Serial.println("[SET_TIME] Format salah!");
     }
   }
+
+    if (server.hasArg("HALFCHIME")) {
+    String data = server.arg("HALFCHIME");
+    int colon = data.indexOf(':');
+    if (colon != -1) {
+      byte h = data.substring(0, colon).toInt();
+      byte f = data.substring(colon + 1).toInt();
+
+      if (h < 24) {
+        saveHalfHourChime(h, f);
+        server.send(200, "text/plain", "OK");
+        Serial.printf("[HALFCHIME] Hour:%d File:%d\n", h, f);
+      } else {
+        server.send(400, "text/plain", "Hour invalid (0-23)");
+      }
+    } else {
+      server.send(400, "text/plain", "Format salah. Gunakan HOUR:FILE");
+    }
+  }
+
 }
 
 void handleGetData() {
@@ -569,6 +588,24 @@ void loop() {
   checkHourlyChime();
 }
 
+
+void updateVolumeByTime(uint8_t hour) {
+  int targetVolume;
+
+  if (hour >= 22 || hour < 4) {
+    targetVolume = 5; // volume malam
+  } else {
+    targetVolume = settings.volumeDfplayer; // volume normal dari aplikasi
+  }
+
+  // hanya update kalau berbeda dengan volume terakhir
+  if (currentVolume != targetVolume) {
+    myDFPlayer.volume(targetVolume);
+    currentVolume = targetVolume;
+    Serial.println("Volume update: " + String(targetVolume));
+  }
+}
+
 /*
 void loop() {
   // --- kode loop utama programmu mulai jalan di sini ---
@@ -669,7 +706,7 @@ void showTemp(){
 // --- Fungsi cek bunyi jam & setengah jam ---
 void checkHourlyChime() {
   now = RTC.now();
-
+  updateVolumeByTime(now.hour());
   // Bunyi jam tepat
   if (now.minute() == 0 && now.second() == 0 && now.hour() != lastHourlyPlay) {
     uint8_t jam = now.hour() % 12;
