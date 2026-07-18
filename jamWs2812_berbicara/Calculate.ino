@@ -1,9 +1,7 @@
-
+/*
 //////hijiriyah voidku/////////////////////////////////////////////////
 void islam() {
   now = RTC.now();
-
-  checkScheduledSync(now.hour(),now.minute());
   
   static int8_t lastDayCalc = -1;
   if (now.minute() == 0 && now.second() == 0 && now.hour() != lastDayCalc){
@@ -116,4 +114,4 @@ void check() {
 
     stateSendSholat = false;
   }
-}
+}*/

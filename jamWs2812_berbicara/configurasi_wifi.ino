@@ -1,7 +1,7 @@
 
 // Variabel yang bisa disesuaikan user (bisa dari EEPROM/WebUI)
-uint8_t syncHour = 1;   // Contoh: Jam 03:00 pagi
-uint8_t syncMinute = 16; // Menit ke-0
+uint8_t syncHour = 5;   // Contoh: Jam 03:00 pagi
+uint8_t syncMinute = 55; // Menit ke-0
 bool hasSynced = false; // Flag agar tidak looping sync di menit yang sama
 
 // Fungsi utama untuk sinkronisasi
@@ -12,11 +12,11 @@ void syncTimeNTP() {
   delay(2500);
   WiFi.mode(WIFI_STA);
   WiFi.begin(otaSsid, otaPass);
-  Serial.println("menyambung wifi");
+  Serial.println(F("menyambung wifi"));
  
   // 2. Tunggu koneksi dengan timeout (maksimal ~10 detik)
-  uint8_t wifiTimeout = 0;
- while (WiFi.status() != WL_CONNECTED && wifiTimeout <= 100) {
+ uint8_t wifiTimeout = 0;
+ while (WiFi.status() != WL_CONNECTED && wifiTimeout <= 150) {
     delay(500);
     Serial.print(".");
     wifiTimeout++;
@@ -25,7 +25,7 @@ void syncTimeNTP() {
 
   // 3. Jika berhasil konek, lakukan sinkronisasi NTP
   if (WiFi.status() == WL_CONNECTED) {
-      Serial.println("berhasil konek");
+      Serial.println(F("berhasil konek"));
       Clock.update();
       Time.setDoW(Clock.getDay());
       Time.setHour(Clock.getHours());
@@ -40,14 +40,14 @@ void syncTimeNTP() {
       AP_init();
       Serial.println("berhasil sinkron");
    }else if(WiFi.status() != WL_CONNECTED) {
-      Serial.println("gagal konek");
+      Serial.println(F("gagal konek"));
       WiFi.disconnect(true); 
       myDFPlayer.playFolder(3, 7); // 006_mulai mode AP.wav
-      delay(1000); // Beri jeda sebentar agar hardware radio stabil
+      //delay(1000); // Beri jeda sebentar agar hardware radio stabil
       AP_init();
       
    }
-   myDFPlayer.volume(settings.volumeDfplayer);
+  
 }
 
 // Masukkan fungsi ini di dalam loop() Anda

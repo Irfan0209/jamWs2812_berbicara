@@ -52,9 +52,9 @@ SoftwareSerial softSerial(2, 14); // RX, TX D4 D6
 char ssid[20]     = "JAM_WS2812";
 char password[20] = "00000000";
 
-const char* otaSsid = "Oppo A12";
-const char* otaPass = "00000000";
-const char* otaHost = "JAM-STRIP";
+const char* otaSsid = "AUTOBACKUP";
+const char* otaPass = "IA051510";
+//const char* otaHost = "JAM-STRIP";
 
 const long utcOffsetInSeconds = 25200;
 
@@ -454,7 +454,7 @@ void loadSettings() {
   settings.alarm2Minute      = EEPROM.read(ADDR_ALARM2_MINUTE);
   settings.alarm2Sound       = EEPROM.read(ADDR_ALARM2_SOUND);
 
-  Serial.println(F("\n[EEPROM] === SETTINGS LOADED ==="));
+  /*Serial.println(F("\n[EEPROM] === SETTINGS LOADED ==="));
   Serial.println("[EEPROM] modeOnline        : " + String(settings.modeOnline));
   Serial.println("[EEPROM] kecerahan         : " + String(settings.kecerahan));
   Serial.println("[EEPROM] volumeDfplayer    : " + String(settings.volumeDfplayer));
@@ -469,7 +469,7 @@ void loadSettings() {
   Serial.println("[EEPROM] alarm2Hour        : " + String(settings.alarm2Hour));
   Serial.println("[EEPROM] alarm2Minute      : " + String(settings.alarm2Minute));
   Serial.println("[EEPROM] alarm2Sound       : " + String(settings.alarm2Sound));
-  Serial.println(F("[EEPROM] ========================\n"));
+  Serial.println(F("[EEPROM] ========================\n"));*/
 }
 void setup() {
   Serial.begin(9600);
@@ -490,7 +490,7 @@ void setup() {
 
   // === SYSTEM STARTUP SOUND SEQUENCE ===
   myDFPlayer.volume(30);  // volume awal sementara, nanti diganti dari EEPROM
-  delay(500);
+  delay(100);
   myDFPlayer.playFolder(3, 1); // 001_menyiapkan system.wav
   delay(2000); // sesuaikan dengan durasi file
  
@@ -505,22 +505,20 @@ void setup() {
   delay(3000);
   
   // === MODE CONNECTION ===
- 
   syncTimeNTP();
  
-  delay(2000);
+  delay(3000);
   myDFPlayer.playFolder(3, 3); // 007_jam menyala.wav
-  delay(1000);
-  myDFPlayer.volume(settings.volumeDfplayer);
-  delay(1000);
+  delay(3000);
+  
   Serial.println();
-  Serial.println("READY");
+  Serial.println(F("READY"));
 }
 
 void loop() {
 
-  islam();
-  check();
+//  islam();
+//  check();
 
   // --- Mode Offline + Setting ---
   checkClientConnected();  
@@ -533,22 +531,6 @@ void loop() {
   // --- Mode Normal ---
   timerHue();
   buzzerWarning(stateBuzzWar);
-
-  // Jika sedang memutar file DFPlayer
-  /*if (isPlaying) {
-    // Cek apakah DFPlayer sudah selesai memutar file
-    if (myDFPlayer.available()) {
-      uint8_t type = myDFPlayer.readType();
-      if (type == DFPlayerPlayFinished) {
-        isPlaying = false;
-        Serial.println("DFPlayer: Playback finished.");
-      }
-    }
-//    // Saat isPlaying true, kita bisa tetap tampilkan jam atau animasi tertentu
-//    showClock(getCurrentColor());
-//    showDots(0xFF0000);
-//    return; // Skip sisa proses normal
-  }*/
 
   // --- Tampilan Normal (tidak sedang memutar audio) ---
   static unsigned long lastToggle = 0;
@@ -576,25 +558,6 @@ void loop() {
   checkAlarm();
   checkHourlyChime();
 }
-
-
-void updateVolumeByTime(uint8_t hour) {
-  uint8_t targetVolume;
-
-//  if (hour >= 22 || hour < 4) {
-//    targetVolume = 5; // volume malam
-//  } else {
-//    targetVolume = settings.volumeDfplayer; // volume normal dari aplikasi
-//  }
-
-  // hanya update kalau berbeda dengan volume terakhir
-  if (currentVolume != targetVolume) {
-    myDFPlayer.volume(targetVolume);
-    currentVolume = targetVolume;
-    Serial.println("Volume update: " + String(targetVolume));
-  }
-}
-
 
 // =========================
 // Cek apakah ada client di AP
@@ -639,11 +602,12 @@ void showTemp(){
 // --- Fungsi cek bunyi jam & setengah jam ---
 void checkHourlyChime() {
   now = RTC.now();
-  //updateVolumeByTime(now.hour());
+  checkScheduledSync(now.hour(),now.minute()); //cek jadwal sinkron jam ke NTP
   // Bunyi jam tepat
   if (now.minute() == 0 && now.second() == 0 && now.hour() != lastHourlyPlay) {
     uint8_t jam = now.hour() % 12;
     if (jam == 0) { jam = 12; }
+    myDFPlayer.volume(settings.volumeDfplayer);
     myDFPlayer.playFolder(1, jam);  // Folder 1 = suara jam 1-12
     delay(50);
     isPlaying = true;
@@ -651,27 +615,30 @@ void checkHourlyChime() {
   }
 
   // Bunyi setengah jam
-  if (now.minute() == 30 && now.second() == 0 && now.hour() != lastHalfPlay) {
-    uint8_t fileIndex = loadHalfHourChime(now.hour()); // ambil setting user dari EEPROM
-    if (fileIndex > 0) {
-      myDFPlayer.playFolder(2, fileIndex);  // Misal folder 2 = koleksi bunyi setengah jam
-      delay(50);
-      isPlaying = true;
-    }
-    lastHalfPlay = now.hour();
-  }
+//  if (now.minute() == 30 && now.second() == 0 && now.hour() != lastHalfPlay) {
+//    uint8_t fileIndex = loadHalfHourChime(now.hour()); // ambil setting user dari EEPROM
+//    if (fileIndex > 0) {
+//      myDFPlayer.volume(settings.volumeDfplayer);
+//      myDFPlayer.playFolder(2, fileIndex);  // Misal folder 2 = koleksi bunyi setengah jam
+//      delay(50);
+//      isPlaying = true;
+//    }
+//    lastHalfPlay = now.hour();
+//  }
 }
 
 void checkAlarm() {
     now = RTC.now();
   //if (!isPlaying) {
     if (now.hour() == settings.alarm1Hour && now.minute() == settings.alarm1Minute && now.second() == 0) {
+      myDFPlayer.volume(settings.volumeDfplayer);
       myDFPlayer.playFolder(2,settings.alarm1Sound);
       delay(50);
       isPlaying = true;
      // Serial.println("ALARM 1 RUN");
     }
     if (now.hour() == settings.alarm2Hour && now.minute() == settings.alarm2Minute && now.second() == 0) {
+      myDFPlayer.volume(settings.volumeDfplayer);
       myDFPlayer.playFolder(2,settings.alarm2Sound);
       delay(50);
       isPlaying = true;
